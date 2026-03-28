@@ -1,12 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { gsap } from 'gsap'
+import { useSession } from 'next-auth/react'
+import { useAction, useMutation, useQuery } from 'convex/react'
+import { anyApi } from 'convex/server'
 import Navbar from '@/components/Navbar'
 import FlaticonIcon from '@/components/FlaticonIcon'
 import {
-  Calendar, Clock, Bell, User, MapPin, Star, Phone, ChevronRight,
-  Plus, Check, X, Pill, Stethoscope, Activity, ChevronLeft, AlarmClock
+  Calendar, Clock, Bell, ChevronRight,
+  Plus, Check, X, Pill, Stethoscope, Activity, ChevronLeft, AlarmClock,
+  MapPin, Star, Send, Link2, CheckCircle2, Loader2, Trash2, WifiOff
 } from 'lucide-react'
 
 // ---- Mock Data ----
@@ -32,6 +36,9 @@ const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 export default function AppointmentsPage() {
+  const { data: session } = useSession()
+  const userId = (session?.user?.email ?? '') as string
+
   const pageRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const calendarRef = useRef<HTMLDivElement>(null)
@@ -41,7 +48,6 @@ export default function AppointmentsPage() {
   const [selectedDate, setSelectedDate] = useState<number | null>(null)
   const [selectedTime, setSelectedTime] = useState<string | null>(null)
   const [appointments, setAppointments] = useState(UPCOMING_APPOINTMENTS)
-  const [reminders, setReminders] = useState(INITIAL_REMINDERS)
   const [booked, setBooked] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth())
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
@@ -49,6 +55,39 @@ export default function AppointmentsPage() {
   // New reminder form
   const [showReminderForm, setShowReminderForm] = useState(false)
   const [newReminder, setNewReminder] = useState({ medicine: '', time: '08:00', frequency: 'Once daily' })
+
+  // Telegram state
+  const [telegramStatus, setTelegramStatus] = useState<'idle' | 'connecting' | 'success' | 'error'>('idle')
+  const [telegramError, setTelegramError] = useState('')
+
+  // ---- Convex hooks ----
+  const dbReminders = useQuery(
+    anyApi.queries.getReminders.byUserId,
+    userId ? { userId } : 'skip'
+  ) as Array<{ _id: string; medicineName: string; time: string; frequency?: string; taken: boolean; telegramChatId?: string; daysLeft?: number; color?: string }> | undefined
+
+  const userSettings = useQuery(
+    anyApi.queries.getUserSettings.byUserId,
+    userId ? { userId } : 'skip'
+  ) as { telegramChatId?: string; telegramUsername?: string } | null | undefined
+
+  const upsertReminder = useMutation(anyApi.mutations.saveReminder.upsert)
+  const toggleTakenMutation = useMutation(anyApi.mutations.saveReminder.toggleTaken)
+  const removeReminder = useMutation(anyApi.mutations.saveReminder.remove)
+  const disconnectTelegram = useMutation(anyApi.mutations.saveUserSettings.disconnectTelegram)
+  const sendTelegramReminder = useAction(anyApi.actions.sendTelegram.sendTelegramReminder)
+
+  // Use DB reminders if user is logged in, else fall back to demo data
+  const reminders = (userId && dbReminders) ? dbReminders.map((r, i) => ({
+    ...r,
+    id: r._id,
+    medicine: r.medicineName,
+    daysLeft: r.daysLeft ?? 30,
+    color: ['#527d56', '#4a9e8e', '#e07b5a', '#8b7fb8'][i % 4],
+  })) : INITIAL_REMINDERS
+
+  const telegramChatId = userSettings?.telegramChatId
+  const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? 'ShifaAIBot'
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -94,25 +133,62 @@ export default function AppointmentsPage() {
     }, 2500)
   }
 
-  const toggleTaken = (id: number) => {
-    setReminders(prev => prev.map(r => r.id === id ? { ...r, taken: !r.taken } : r))
-  }
+  const toggleTaken = useCallback(async (id: string | number) => {
+    if (userId && typeof id === 'string') {
+      // DB-backed toggle
+      await toggleTakenMutation({ id: id as Parameters<typeof toggleTakenMutation>[0]['id'] })
+    } else if (typeof id === 'number') {
+      // Demo mode - client only (no user logged in)
+    }
+  }, [userId, toggleTakenMutation])
 
-  const addReminder = () => {
+  const addReminder = useCallback(async () => {
     if (!newReminder.medicine) return
-    const colors = ['#527d56', '#4a9e8e', '#e07b5a', '#8b7fb8']
-    setReminders(prev => [...prev, {
-      id: Date.now(),
-      medicine: newReminder.medicine,
-      time: newReminder.time,
-      frequency: newReminder.frequency,
-      daysLeft: 30,
-      taken: false,
-      color: colors[prev.length % colors.length]
-    }])
+    if (userId) {
+      await upsertReminder({
+        userId,
+        medicineName: newReminder.medicine,
+        time: newReminder.time,
+        frequency: newReminder.frequency,
+        taken: false,
+        telegramChatId: telegramChatId ?? undefined,
+      })
+    }
     setNewReminder({ medicine: '', time: '08:00', frequency: 'Once daily' })
     setShowReminderForm(false)
-  }
+  }, [newReminder, userId, upsertReminder, telegramChatId])
+
+  const deleteReminder = useCallback(async (id: string) => {
+    await removeReminder({ id: id as Parameters<typeof removeReminder>[0]['id'] })
+  }, [removeReminder])
+
+  // ---- Telegram: check every minute if a reminder is due, then send message ----
+  useEffect(() => {
+    if (!telegramChatId || !userId || !dbReminders) return
+    const check = async () => {
+      const now = new Date()
+      const hh = now.getHours().toString().padStart(2, '0')
+      const mm = now.getMinutes().toString().padStart(2, '0')
+      const currentTime = `${hh}:${mm}`
+      for (const r of dbReminders) {
+        if (r.time === currentTime && !r.taken) {
+          try {
+            await sendTelegramReminder({
+              chatId: telegramChatId,
+              medicineName: r.medicineName,
+              time: r.time,
+              frequency: r.frequency,
+            })
+          } catch (e) {
+            console.error('Failed to send Telegram reminder', e)
+          }
+        }
+      }
+    }
+    check() // run immediately on mount too
+    const interval = setInterval(check, 60_000)
+    return () => clearInterval(interval)
+  }, [telegramChatId, userId, dbReminders, sendTelegramReminder])
 
   const daysInMonth = getDaysInMonth(currentMonth, currentYear)
   const firstDay = getFirstDayOfMonth(currentMonth, currentYear)
@@ -386,6 +462,13 @@ export default function AppointmentsPage() {
                 </button>
               </div>
 
+              {reminders.length === 0 && (
+                <div className="glass rounded-2xl p-10 text-center anim-card border border-cream-200/60">
+                  <Pill size={32} className="text-sage-200 mx-auto mb-3" />
+                  <p className="text-sage-400 text-sm">No reminders yet. Add your first medication reminder!</p>
+                </div>
+              )}
+
               {reminders.map((r) => (
                 <div
                   key={r.id}
@@ -401,9 +484,16 @@ export default function AppointmentsPage() {
                       <Pill size={22} style={{ color: r.color }} />
                     </div>
                     <div className="flex-1">
-                      <h4 className={`font-semibold text-sage-800 text-sm ${r.taken ? 'line-through text-sage-400' : ''}`}>
-                        {r.medicine}
-                      </h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className={`font-semibold text-sage-800 text-sm ${r.taken ? 'line-through text-sage-400' : ''}`}>
+                          {r.medicine}
+                        </h4>
+                        {telegramChatId && (
+                          <span className="flex items-center gap-1 text-[10px] bg-[#229ED9]/10 text-[#229ED9] px-1.5 py-0.5 rounded-full font-medium">
+                            <Send size={8} /> Telegram
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         <span className="flex items-center gap-1 text-xs text-sage-400">
                           <Clock size={11} /> {r.time}
@@ -423,16 +513,28 @@ export default function AppointmentsPage() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => toggleTaken(r.id)}
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ${
-                        r.taken
-                          ? 'bg-sage-100 text-sage-500'
-                          : 'bg-white border-2 border-cream-200 text-sage-300 hover:border-sage-300'
-                      }`}
-                    >
-                      {r.taken ? <Check size={16} /> : <Check size={16} />}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Mark taken */}
+                      <button
+                        onClick={() => toggleTaken(r.id)}
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                          r.taken
+                            ? 'bg-sage-100 text-sage-500'
+                            : 'bg-white border-2 border-cream-200 text-sage-300 hover:border-sage-300'
+                        }`}
+                      >
+                        <Check size={15} />
+                      </button>
+                      {/* Delete */}
+                      {userId && typeof r.id === 'string' && (
+                        <button
+                          onClick={() => deleteReminder(r.id as string)}
+                          className="w-9 h-9 rounded-xl flex items-center justify-center text-sage-200 hover:text-red-400 hover:bg-red-50 transition-all"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -481,6 +583,11 @@ export default function AppointmentsPage() {
                         </select>
                       </div>
                     </div>
+                    {telegramChatId && (
+                      <p className="text-xs text-[#229ED9] flex items-center gap-1.5">
+                        <Send size={11} /> This reminder will be sent to your Telegram
+                      </p>
+                    )}
                     <button onClick={addReminder} className="btn-primary w-full justify-center text-sm mt-1">
                       <Plus size={15} /> Add Reminder
                     </button>
@@ -489,8 +596,75 @@ export default function AppointmentsPage() {
               )}
             </div>
 
-            {/* RIGHT: Stats + Schedule Overview */}
+            {/* RIGHT: Telegram Connect + Stats + Schedule */}
             <div className="space-y-5">
+
+              {/* ===== TELEGRAM CONNECT CARD ===== */}
+              <div className={`rounded-2xl p-5 anim-card border-2 transition-all ${
+                telegramChatId
+                  ? 'border-[#229ED9]/30 bg-[#229ED9]/5'
+                  : 'glass border-cream-200/60'
+              }`}>
+                <div className="flex items-center gap-3 mb-4">
+                  {/* Telegram logo SVG */}
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#229ED9' }}>
+                    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.04 9.607c-.153.682-.554.85-1.122.528l-3.108-2.29-1.5 1.44c-.165.165-.304.304-.624.304l.222-3.154 5.74-5.184c.248-.222-.055-.346-.387-.124L7.47 14.49l-3.048-.953c-.662-.207-.675-.662.138-.98l11.9-4.59c.55-.2 1.032.134.851.939l-.75-.658z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sage-800 text-sm">Telegram Reminders</h3>
+                    <p className="text-xs text-sage-400">
+                      {telegramChatId
+                        ? `Connected${userSettings?.telegramUsername ? ` as @${userSettings.telegramUsername}` : ''}`
+                        : 'Get notified on Telegram'}
+                    </p>
+                  </div>
+                  {telegramChatId && (
+                    <CheckCircle2 size={18} className="ml-auto text-[#229ED9] shrink-0" />
+                  )}
+                </div>
+
+                {!userId ? (
+                  <p className="text-xs text-sage-400 text-center py-2">Sign in to connect Telegram</p>
+                ) : telegramChatId ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 bg-[#229ED9]/10 rounded-xl p-3">
+                      <Send size={13} className="text-[#229ED9] shrink-0" />
+                      <p className="text-xs text-[#229ED9] font-medium">Reminders will be sent to your Telegram at the scheduled time.</p>
+                    </div>
+                    <button
+                      onClick={() => disconnectTelegram({ userId })}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-red-200 text-red-400 text-xs hover:bg-red-50 transition-colors"
+                    >
+                      <WifiOff size={13} /> Disconnect Telegram
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-sage-500 leading-relaxed">
+                      Connect your Telegram to receive medication reminders as messages. Quick 2-step setup:
+                    </p>
+                    <ol className="text-xs text-sage-500 space-y-1.5 pl-3">
+                      <li className="flex gap-2"><span className="text-sage-300 font-bold">1.</span> Click the button below to open Telegram</li>
+                      <li className="flex gap-2"><span className="text-sage-300 font-bold">2.</span> Send the <code className="bg-cream-100 px-1 rounded text-sage-600">/start</code> message to the bot</li>
+                    </ol>
+                    <a
+                      href={`https://t.me/${BOT_USERNAME}?start=${encodeURIComponent(userId)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-primary w-full justify-center text-sm"
+                      style={{ background: '#229ED9', display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px', borderRadius: '12px', color: 'white', fontWeight: 600, textDecoration: 'none' }}
+                    >
+                      <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.04 9.607c-.153.682-.554.85-1.122.528l-3.108-2.29-1.5 1.44c-.165.165-.304.304-.624.304l.222-3.154 5.74-5.184c.248-.222-.055-.346-.387-.124L7.47 14.49l-3.048-.953c-.662-.207-.675-.662.138-.98l11.9-4.59c.55-.2 1.032.134.851.939l-.75-.658z"/>
+                      </svg>
+                      Open in Telegram
+                    </a>
+                    <p className="text-[10px] text-sage-300 text-center">Page will update automatically once connected</p>
+                  </div>
+                )}
+              </div>
 
               {/* Daily Progress */}
               <div className="glass rounded-2xl p-5 anim-card border border-cream-200/60">
