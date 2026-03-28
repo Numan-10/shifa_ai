@@ -9,6 +9,22 @@ Shifa AI is an AI-powered medicine companion that helps you search, understand, 
 - Serious health risks
 ---
 
+## 📸 Screenshots
+
+| Landing Page | Sign In |
+|:---:|:---:|
+| ![Landing Page](./landing.png) | ![Sign In](./Auth.png) |
+
+| Medicine Search | Appointments |
+|:---:|:---:|
+| ![Medicine Search](./search.png) | ![Appointments](./appointments.png) |
+
+| Medication Reminders |
+|:---:|
+| ![Medication Reminders](./reminder.png) |
+
+---
+
 ## Who Is This For?
 
 Shifa AI serves anyone who has ever stood at a pharmacy counter confused about what they were holding. Specifically:
