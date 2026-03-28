@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { gsap } from 'gsap'
@@ -7,25 +7,33 @@ import FlaticonIcon from '@/components/FlaticonIcon'
 import {
   Search, Mic, MicOff, Upload, X, ChevronDown, ChevronUp,
   Pill, AlertTriangle, Activity, DollarSign, FlaskConical,
-  Stethoscope, ShieldCheck, Clock, ExternalLink, Loader2, FileText
+  Stethoscope, ShieldCheck, Clock, ExternalLink, Loader2, FileText,
+  CheckCircle2, Sparkles, ChevronRight, ScanLine, ImageOff
 } from 'lucide-react'
+
+// ---- OCR result type ----
+interface ExtractedMedicine {
+  name: string
+  dosage: string
+  instructions: string
+}
 
 // ---- Mock medicine database ----
 const MOCK_DB: Record<string, MedicineData> = {
   paracetamol: {
     name: 'Paracetamol (Acetaminophen)',
     brand: 'Calpol, Panadol, Tylenol',
-    chemical: 'C₈H₉NO₂ — para-acetylaminophenol',
+    chemical: 'Câ‚ˆHâ‚‰NOâ‚‚ â€” para-acetylaminophenol',
     category: 'Analgesic / Antipyretic',
     uses: ['Fever reduction', 'Mild to moderate pain relief', 'Headache', 'Toothache', 'Muscle aches', 'Cold & flu symptoms'],
-    dosage: { adult: '325–1000 mg every 4–6 hours', child: '10–15 mg/kg every 4–6 hours', max: '4000 mg/day for adults' },
+    dosage: { adult: '325â€“1000 mg every 4â€“6 hours', child: '10â€“15 mg/kg every 4â€“6 hours', max: '4000 mg/day for adults' },
     sideEffects: ['Generally well-tolerated at recommended doses', 'Nausea (rare)', 'Skin rash (rare)', 'Liver damage (overdose)'],
     prevention: ['Do not exceed recommended dose', 'Avoid alcohol consumption', 'Check other medications for paracetamol content', 'Consult doctor if liver disease present'],
     prices: [
-      { store: 'Apollo Pharmacy', price: '₹28', generic: true, available: true },
-      { store: '1mg', price: '₹32', generic: false, available: true },
-      { store: 'Netmeds', price: '₹26', generic: true, available: true },
-      { store: 'PharmEasy', price: '₹30', generic: false, available: true },
+      { store: 'Apollo Pharmacy', price: 'â‚¹28', generic: true, available: true },
+      { store: '1mg', price: 'â‚¹32', generic: false, available: true },
+      { store: 'Netmeds', price: 'â‚¹26', generic: true, available: true },
+      { store: 'PharmEasy', price: 'â‚¹30', generic: false, available: true },
     ],
     interactions: ['Warfarin (blood thinner)', 'Alcohol'],
     pregnancy: 'Generally considered safe in recommended doses',
@@ -34,17 +42,17 @@ const MOCK_DB: Record<string, MedicineData> = {
   ibuprofen: {
     name: 'Ibuprofen',
     brand: 'Brufen, Advil, Nurofen',
-    chemical: 'C₁₃H₁₈O₂ — (RS)-2-(4-(2-methylpropyl)phenyl)propanoic acid',
-    category: 'NSAID — Non-Steroidal Anti-Inflammatory Drug',
+    chemical: 'Câ‚â‚ƒHâ‚â‚ˆOâ‚‚ â€” (RS)-2-(4-(2-methylpropyl)phenyl)propanoic acid',
+    category: 'NSAID â€” Non-Steroidal Anti-Inflammatory Drug',
     uses: ['Pain relief', 'Inflammation reduction', 'Fever', 'Arthritis', 'Menstrual cramps', 'Dental pain'],
-    dosage: { adult: '200–400 mg every 4–6 hours', child: '5–10 mg/kg every 6–8 hours', max: '1200 mg/day OTC; 3200 mg/day prescribed' },
+    dosage: { adult: '200â€“400 mg every 4â€“6 hours', child: '5â€“10 mg/kg every 6â€“8 hours', max: '1200 mg/day OTC; 3200 mg/day prescribed' },
     sideEffects: ['Stomach upset or pain', 'Heartburn', 'Nausea', 'Dizziness', 'Increased blood pressure', 'Kidney issues (prolonged use)'],
     prevention: ['Take with food or milk', 'Avoid if kidney or heart disease', 'Not for use during third trimester pregnancy', 'Limit alcohol intake'],
     prices: [
-      { store: 'Apollo Pharmacy', price: '₹42', generic: true, available: true },
-      { store: '1mg', price: '₹38', generic: true, available: true },
-      { store: 'Netmeds', price: '₹45', generic: false, available: false },
-      { store: 'PharmEasy', price: '₹39', generic: true, available: true },
+      { store: 'Apollo Pharmacy', price: 'â‚¹42', generic: true, available: true },
+      { store: '1mg', price: 'â‚¹38', generic: true, available: true },
+      { store: 'Netmeds', price: 'â‚¹45', generic: false, available: false },
+      { store: 'PharmEasy', price: 'â‚¹39', generic: true, available: true },
     ],
     interactions: ['Aspirin', 'Blood thinners', 'ACE inhibitors', 'Lithium'],
     pregnancy: 'Avoid in third trimester; use with caution in first and second',
@@ -53,17 +61,17 @@ const MOCK_DB: Record<string, MedicineData> = {
   amoxicillin: {
     name: 'Amoxicillin',
     brand: 'Amoxil, Trimox, Moxatag',
-    chemical: 'C₁₆H₁₉N₃O₅S — (2S,5R,6R)-6-[(2R)-2-amino-2-(4-hydroxyphenyl)acetamido]-3,3-dimethyl-7-oxo-4-thia-1-azabicyclo[3.2.0]heptane-2-carboxylic acid',
-    category: 'Antibiotic — Penicillin class',
+    chemical: 'Câ‚â‚†Hâ‚â‚‰Nâ‚ƒOâ‚…S â€” (2S,5R,6R)-6-[(2R)-2-amino-2-(4-hydroxyphenyl)acetamido]-3,3-dimethyl-7-oxo-4-thia-1-azabicyclo[3.2.0]heptane-2-carboxylic acid',
+    category: 'Antibiotic â€” Penicillin class',
     uses: ['Bacterial infections', 'Ear infections', 'Throat infections (strep)', 'Urinary tract infections', 'Skin infections', 'H. pylori (with other meds)'],
-    dosage: { adult: '250–500 mg every 8 hours or 500–875 mg every 12 hours', child: '25–45 mg/kg/day in divided doses', max: '3 g/day standard; higher in specific cases' },
-    sideEffects: ['Diarrhea', 'Nausea', 'Skin rash', 'Vomiting', 'Allergic reactions (in penicillin-allergic patients — serious)'],
+    dosage: { adult: '250â€“500 mg every 8 hours or 500â€“875 mg every 12 hours', child: '25â€“45 mg/kg/day in divided doses', max: '3 g/day standard; higher in specific cases' },
+    sideEffects: ['Diarrhea', 'Nausea', 'Skin rash', 'Vomiting', 'Allergic reactions (in penicillin-allergic patients â€” serious)'],
     prevention: ['Complete full course even if feeling better', 'Inform doctor of penicillin allergy', 'May reduce effectiveness of oral contraceptives', 'Take at even intervals'],
     prices: [
-      { store: 'Apollo Pharmacy', price: '₹95', generic: true, available: true },
-      { store: '1mg', price: '₹110', generic: false, available: true },
-      { store: 'Netmeds', price: '₹88', generic: true, available: true },
-      { store: 'PharmEasy', price: '₹102', generic: false, available: true },
+      { store: 'Apollo Pharmacy', price: 'â‚¹95', generic: true, available: true },
+      { store: '1mg', price: 'â‚¹110', generic: false, available: true },
+      { store: 'Netmeds', price: 'â‚¹88', generic: true, available: true },
+      { store: 'PharmEasy', price: 'â‚¹102', generic: false, available: true },
     ],
     interactions: ['Methotrexate', 'Warfarin', 'Other antibiotics', 'Probenecid'],
     pregnancy: 'Generally safe during pregnancy when benefits outweigh risks',
@@ -98,7 +106,10 @@ export default function DashboardPage() {
   })
   const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null)
   const [prescriptionLoading, setPrescriptionLoading] = useState(false)
-  const [prescriptionResult, setPrescriptionResult] = useState<string | null>(null)
+  const [extractedMedicines, setExtractedMedicines] = useState<ExtractedMedicine[]>([])
+  const [ocrNotes, setOcrNotes] = useState<string>('')
+  const [ocrConfidence, setOcrConfidence] = useState<'high' | 'medium' | 'low' | null>(null)
+  const [ocrError, setOcrError] = useState<string | null>(null)
   const [pricesLoading, setPricesLoading] = useState(false)
 
   useEffect(() => {
@@ -170,15 +181,81 @@ export default function DashboardPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
+    if (!validTypes.includes(file.type)) {
+      setOcrError('Please upload a JPG, PNG, WebP, or PDF file.')
+      return
+    }
+
     setPrescriptionFile(file)
     setPrescriptionLoading(true)
-    setPrescriptionResult(null)
+    setExtractedMedicines([])
+    setOcrError(null)
+    setOcrNotes('')
+    setOcrConfidence(null)
 
-    await new Promise(r => setTimeout(r, 2000))
-    setPrescriptionResult(
-      'Extracted medicines from prescription:\n1. Paracetamol 500mg — Take 1 tablet twice daily after meals\n2. Amoxicillin 250mg — Take 1 capsule 3 times daily for 5 days\n3. Vitamin D3 1000IU — Take 1 tablet daily'
-    )
-    setPrescriptionLoading(false)
+    try {
+      // Convert file to base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const result = reader.result as string
+          // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+          resolve(result.split(',')[1])
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      // Call Gemini Vision API route
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageData: base64,
+          mimeType: file.type === 'application/pdf' ? 'application/pdf' : file.type,
+        }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json() as { error?: string }
+        throw new Error(err.error ?? `Server error ${response.status}`)
+      }
+
+      const data = await response.json() as {
+        medicines: ExtractedMedicine[]
+        rawText?: string
+        confidence?: 'high' | 'medium' | 'low'
+        notes?: string
+        error?: string
+      }
+
+      if (data.error) throw new Error(data.error)
+
+      setExtractedMedicines(data.medicines ?? [])
+      setOcrNotes(data.notes ?? '')
+      setOcrConfidence(data.confidence ?? 'medium')
+
+      // Animate scanner result in
+      setTimeout(() => {
+        if (resultsRef.current) {
+          gsap.fromTo(resultsRef.current,
+            { y: 20, opacity: 0 },
+            { y: 0, opacity: 1, duration: 0.5, ease: 'power2.out' }
+          )
+        }
+      }, 50)
+
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      setOcrError(`Failed to read prescription: ${message}`)
+    } finally {
+      setPrescriptionLoading(false)
+      // Reset input so the same file can be re-uploaded
+      e.target.value = ''
+    }
   }
 
   const toggleSection = (section: string) => {
@@ -212,7 +289,7 @@ export default function DashboardPage() {
             </div>
             <input
               className="flex-1 bg-transparent text-sage-900 placeholder-sage-300 outline-none text-base"
-              placeholder="Search by medicine name (e.g. Paracetamol, Ibuprofen…)"
+              placeholder="Search by medicine name (e.g. Paracetamol, Ibuprofenâ€¦)"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -246,7 +323,7 @@ export default function DashboardPage() {
               <div className="waveform flex items-end gap-1.5">
                 {[...Array(7)].map((_, i) => <span key={i} />)}
               </div>
-              <span className="text-xs text-red-500 font-medium ml-2">Listening…</span>
+              <span className="text-xs text-red-500 font-medium ml-2">Listeningâ€¦</span>
             </div>
           )}
         </div>
@@ -267,7 +344,7 @@ export default function DashboardPage() {
         {/* ===== MAIN CONTENT GRID ===== */}
         <div className="grid lg:grid-cols-3 gap-6">
 
-          {/* LEFT COL — Results */}
+          {/* LEFT COL â€” Results */}
           <div className="lg:col-span-2 space-y-4" ref={resultsRef}>
 
             {/* Loading State */}
@@ -278,7 +355,7 @@ export default function DashboardPage() {
                     <div key={i} className="loading-dot w-3 h-3 rounded-full bg-sage-400" />
                   ))}
                 </div>
-                <p className="text-sage-400 text-sm">Searching medicine database…</p>
+                <p className="text-sage-400 text-sm">Searching medicine databaseâ€¦</p>
               </div>
             )}
 
@@ -389,7 +466,7 @@ export default function DashboardPage() {
                     {pricesLoading ? (
                       <div className="flex items-center gap-2 text-sage-400 py-4">
                         <Loader2 size={14} className="animate-spin" />
-                        <span className="text-sm">Fetching current prices from pharmacies…</span>
+                        <span className="text-sm">Fetching current prices from pharmaciesâ€¦</span>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -401,7 +478,7 @@ export default function DashboardPage() {
                               </div>
                               <div>
                                 <p className="text-sm font-semibold text-sage-700">{p.store}</p>
-                                <p className="text-xs text-sage-400">{p.generic ? 'Generic' : 'Branded'} · {p.available ? 'In Stock' : 'Out of Stock'}</p>
+                                <p className="text-xs text-sage-400">{p.generic ? 'Generic' : 'Branded'} Â· {p.available ? 'In Stock' : 'Out of Stock'}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-3">
@@ -448,46 +525,114 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* RIGHT COL — Prescription + Dosage Guide */}
+          {/* RIGHT COL â€” Prescription + Dosage Guide */}
           <div className="space-y-5">
 
-            {/* Prescription Upload */}
+            {/* Prescription Scanner — Gemini Vision */}
             <div className="glass rounded-2xl p-5 border border-cream-200/60">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-sage-100 flex items-center justify-center">
-                  <Upload size={15} className="text-sage-500" />
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-sage-100 flex items-center justify-center">
+                    <ScanLine size={15} className="text-sage-500" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sage-800 text-sm">Prescription Scanner</h3>
+                    <p className="text-[10px] text-sage-400">Powered by Gemini Vision AI</p>
+                  </div>
                 </div>
-                <h3 className="font-semibold text-sage-800 text-sm">Prescription Scanner</h3>
+                {(extractedMedicines.length > 0 || ocrError) && (
+                  <button
+                    onClick={() => { setPrescriptionFile(null); setExtractedMedicines([]); setOcrError(null); setOcrNotes(""); setOcrConfidence(null) }}
+                    className="text-xs text-sage-400 hover:text-sage-600 flex items-center gap-1 transition-colors"
+                  >
+                    <X size={12} /> Clear
+                  </button>
+                )}
               </div>
 
-              <label className="block border-2 border-dashed border-cream-300 rounded-xl p-6 text-center cursor-pointer hover:border-sage-300 hover:bg-sage-50/30 transition-all">
-                <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileUpload} />
-                {prescriptionFile ? (
+              <label className={`block border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${prescriptionLoading ? "border-sage-300 bg-sage-50/50 cursor-wait" : "border-cream-300 hover:border-sage-300 hover:bg-sage-50/30"}`}>
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,.pdf" className="hidden" onChange={handleFileUpload} disabled={prescriptionLoading} />
+                {prescriptionLoading ? (
+                  <div className="py-2">
+                    <div className="flex justify-center items-end gap-1 mb-3 h-8">
+                      {[14,20,10,26,16,22,12,18].map((h, i) => (
+                        <div key={i} className="w-1 rounded-full bg-sage-400 animate-pulse" style={{ height: `${h}px`, animationDelay: `${i * 0.1}s` }} />
+                      ))}
+                    </div>
+                    <p className="text-sm text-sage-600 font-medium">Gemini is reading your prescription...</p>
+                    <p className="text-xs text-sage-400 mt-1">Identifying medicines, dosages and instructions</p>
+                  </div>
+                ) : prescriptionFile && extractedMedicines.length === 0 && !ocrError ? (
                   <div>
-                    <FileText size={24} className="text-sage-400 mx-auto mb-2" />
-                    <p className="text-sm text-sage-600 font-medium">{prescriptionFile.name}</p>
-                    <p className="text-xs text-sage-400 mt-1">File uploaded</p>
+                    <FileText size={22} className="text-sage-400 mx-auto mb-2" />
+                    <p className="text-sm text-sage-600 font-medium truncate max-w-[180px] mx-auto">{prescriptionFile.name}</p>
+                    <p className="text-xs text-sage-400 mt-1">Click to scan a different file</p>
                   </div>
                 ) : (
                   <div>
-                    <Upload size={24} className="text-sage-300 mx-auto mb-2" />
-                    <p className="text-sm text-sage-500">Upload prescription image or PDF</p>
-                    <p className="text-xs text-sage-300 mt-1">PNG, JPG, or PDF</p>
+                    <Upload size={22} className="text-sage-300 mx-auto mb-2" />
+                    <p className="text-sm text-sage-500 font-medium">Upload Prescription</p>
+                    <p className="text-xs text-sage-300 mt-1">JPG, PNG, WebP or PDF</p>
                   </div>
                 )}
               </label>
 
-              {prescriptionLoading && (
-                <div className="mt-4 flex items-center gap-2 text-sage-400">
-                  <Loader2 size={14} className="animate-spin" />
-                  <span className="text-xs">Extracting text with AI…</span>
+              {ocrError && (
+                <div className="mt-3 p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-2">
+                  <ImageOff size={14} className="text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-600 leading-relaxed">{ocrError}</p>
                 </div>
               )}
 
-              {prescriptionResult && (
-                <div className="mt-4 p-4 bg-sage-50 rounded-xl border border-sage-200">
-                  <p className="text-xs font-semibold text-sage-600 uppercase tracking-wide mb-2">Extracted Medicines</p>
-                  <pre className="text-xs text-sage-600 whitespace-pre-wrap font-mono leading-relaxed">{prescriptionResult}</pre>
+              {extractedMedicines.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-sage-600 uppercase tracking-wide flex items-center gap-1.5">
+                      <Sparkles size={11} /> Extracted Medicines
+                    </p>
+                    {ocrConfidence && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${ocrConfidence === "high" ? "bg-green-100 text-green-700" : ocrConfidence === "medium" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}`}>
+                        {ocrConfidence === "high" ? "High confidence" : ocrConfidence === "medium" ? "Medium confidence" : "Low confidence"}
+                      </span>
+                    )}
+                  </div>
+
+                  {extractedMedicines.map((med, i) => (
+                    <div key={i} className="p-3 bg-cream-50 rounded-xl border border-cream-200 group">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="w-4 h-4 rounded-full bg-sage-100 flex items-center justify-center shrink-0 text-[10px] font-bold text-sage-600">{i + 1}</span>
+                            <p className="text-sm font-semibold text-sage-800 leading-tight">{med.name}</p>
+                          </div>
+                          {med.dosage && <p className="text-xs text-sage-500 flex items-center gap-1 pl-5"><Pill size={9} className="text-sage-400 shrink-0" /> {med.dosage}</p>}
+                          {med.instructions && <p className="text-xs text-sage-400 mt-0.5 pl-5 leading-relaxed">{med.instructions}</p>}
+                        </div>
+                        <button
+                          onClick={() => { const n = med.name.split(" ")[0]; setQuery(n); handleSearch(n) }}
+                          className="shrink-0 w-7 h-7 rounded-lg bg-white border border-cream-200 flex items-center justify-center text-sage-400 hover:text-sage-600 hover:border-sage-300 transition-all"
+                          title={`Search ${med.name}`}
+                        >
+                          <ChevronRight size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {ocrNotes && (
+                    <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                      <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide mb-1">Doctor Notes</p>
+                      <p className="text-xs text-blue-700 leading-relaxed">{ocrNotes}</p>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-sage-300 text-center pt-1">Click the arrow on any medicine to search its full information</p>
+                </div>
+              )}
+
+              {!prescriptionLoading && prescriptionFile && extractedMedicines.length === 0 && !ocrError && (
+                <div className="mt-3 text-center py-2">
+                  <CheckCircle2 size={16} className="text-sage-300 mx-auto mb-1" />
+                  <p className="text-xs text-sage-400">No medicines detected. Try a clearer image.</p>
                 </div>
               )}
             </div>

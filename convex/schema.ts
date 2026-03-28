@@ -44,10 +44,20 @@ export default defineSchema(
       userId: v.string(),
       medicineName: v.string(),
       time: v.string(),
+      frequency: v.optional(v.string()),
       taken: v.boolean(),
+      telegramChatId: v.optional(v.string()),
     })
       .index("by_user_id", ["userId"])
       .index("by_user_id_and_time", ["userId", "time"]),
+
+    userSettings: defineTable({
+      userId: v.string(),
+      telegramChatId: v.optional(v.string()),
+      telegramUsername: v.optional(v.string()),
+      telegramConnectedAt: v.optional(v.number()),
+    })
+      .index("by_user_id", ["userId"]),
   },
   {
     schemaValidation: true,
