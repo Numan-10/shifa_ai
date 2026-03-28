@@ -265,7 +265,7 @@ export default function LandingPage() {
 
             {/* Features listed */}
             <div className="mt-6 pt-5 border-t border-cream-200">
-              {['Free forever plan available', 'No credit card required', 'HIPAA-compliant & secure'].map((item) => (
+              {['No credit card required', 'HIPAA-compliant & secure'].map((item) => (
                 <div key={item} className="flex items-center gap-2.5 text-xs text-sage-500 mt-2">
                   <Check size={13} className="text-sage-500 shrink-0" />
                   {item}
