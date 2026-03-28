@@ -4,9 +4,10 @@ import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { signIn, useSession } from 'next-auth/react'
+import { useSession } from 'next-auth/react'
 import Navbar from '@/components/Navbar'
 import MedicalCapsuleAnimation from '@/components/MedicalCapsuleAnimation'
+import { buildSignInPath } from '@/lib/authRoutes'
 import {
   Activity, Search, Calendar, Shield, ArrowRight, ChevronRight,
   Microscope, HeartPulse, ClipboardList, Star, Sparkles
@@ -53,7 +54,7 @@ export default function LandingPage() {
     if (isAuthenticated) {
       window.location.href = href
     } else {
-      void signIn('google')
+      window.location.href = buildSignInPath(href)
     }
   }
 

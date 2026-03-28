@@ -1,12 +1,17 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { gsap } from 'gsap'
 import { signIn, signOut, useSession } from 'next-auth/react'
-import { Activity, Menu, X } from 'lucide-react'
+import { Activity, LogOut, Menu, X } from 'lucide-react'
 import ThemeToggle from '@/components/ThemeToggle'
+import {
+  DEFAULT_AUTH_CALLBACK_URL,
+  buildSignInPath,
+  normalizeCallbackUrl,
+} from '@/lib/authRoutes'
 
 const navItems = [
   { href: '/', label: 'Home', protected: false },
@@ -14,28 +19,72 @@ const navItems = [
   { href: '/appointments', label: 'Appointments', protected: true },
 ]
 
+type UserAvatarProps = {
+  image?: string | null
+  name?: string | null
+  className?: string
+}
+
+function UserAvatar({ image, name, className = '' }: UserAvatarProps) {
+  const fallbackLabel = name?.trim().charAt(0).toUpperCase() || 'U'
+
+  if (image) {
+    return (
+      <img
+        src={image}
+        alt={name ? `${name} profile` : 'User profile'}
+        className={`rounded-full object-cover ${className}`}
+        referrerPolicy="no-referrer"
+      />
+    )
+  }
+
+  return (
+    <div className={`rounded-full bg-sage-200 text-sage-700 ${className} flex items-center justify-center text-sm font-semibold`}>
+      {fallbackLabel}
+    </div>
+  )
+}
+
 export default function Navbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const navRef = useRef<HTMLElement>(null)
   const logoRef = useRef<HTMLDivElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-  const { status } = useSession()
+  const { data: session, status } = useSession()
   const isAuthenticated = status === 'authenticated'
+  const userName = session?.user?.name?.trim() || session?.user?.email?.split('@')[0] || 'Profile'
+  const compactUserName = userName.split(/\s+/)[0] || userName
+  const userEmail = session?.user?.email || 'Signed in with Google'
 
-  const handleAuthClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault()
+  const handleAuthAction = () => {
     if (isAuthenticated) {
       void signOut({ callbackUrl: '/' })
-    } else {
-      void signIn('google')
+      return
     }
+
+    if (pathname === '/sign-in') {
+      const currentSearch = typeof window === 'undefined' ? '' : window.location.search
+      const params = new URLSearchParams(currentSearch)
+      const callbackUrl = normalizeCallbackUrl(params.get('callbackUrl'))
+      void signIn('google', { callbackUrl })
+      return
+    }
+
+    const callbackUrl = pathname === '/' ? DEFAULT_AUTH_CALLBACK_URL : pathname
+    router.push(buildSignInPath(callbackUrl))
   }
 
-  const handleNavClick = (event: React.MouseEvent<HTMLAnchorElement>, isProtected: boolean) => {
+  const handleNavClick = (
+    event: MouseEvent<HTMLAnchorElement>,
+    href: string,
+    isProtected: boolean,
+  ) => {
     if (isProtected && !isAuthenticated) {
       event.preventDefault()
-      void signIn('google')
+      router.push(buildSignInPath(href))
     }
   }
 
@@ -86,7 +135,7 @@ export default function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={(e) => handleNavClick(e, item.protected)}
+                  onClick={(e) => handleNavClick(e, item.href, item.protected)}
                   className={`nav-link text-sm font-medium transition-colors duration-200 whitespace-nowrap ${
                     pathname === item.href
                       ? 'text-sage-700 active'
@@ -101,10 +150,36 @@ export default function Navbar() {
             {/* Desktop CTA */}
             <div className="hidden min-[1100px]:flex items-center gap-3">
               <ThemeToggle />
-              <Link href="/" onClick={handleAuthClick} className="btn-ghost text-sm py-2 px-4 whitespace-nowrap">
-                {isAuthenticated ? 'Sign Out' : 'Sign In'}
-              </Link>
-              </div>
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  onClick={handleAuthAction}
+                  className="flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-2 py-1.5 text-sm text-sage-700 shadow-sm backdrop-blur-md transition-all duration-200 hover:border-sage-300 hover:bg-white/10"
+                  title="Sign out"
+                >
+                  <UserAvatar
+                    image={session?.user?.image}
+                    name={session?.user?.name}
+                    className="h-9 w-9 border border-white/50 shadow-sm"
+                  />
+                  <span className="max-w-24 truncate text-sm font-semibold text-sage-700">
+                    {compactUserName}
+                  </span>
+                  <span className="h-5 w-px bg-sage-200" aria-hidden="true" />
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sage-100 text-sage-600">
+                    <LogOut size={15} />
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleAuthAction}
+                  className="btn-ghost whitespace-nowrap px-4 py-2 text-sm"
+                >
+                  Sign In
+                </button>
+              )}
+            </div>
 
             {/* Mobile/Tablet Hamburger */}
             <div className="min-[1100px]:hidden flex items-center gap-2">
@@ -145,7 +220,7 @@ export default function Navbar() {
                 href={item.href}
                 onClick={(e) => {
                   setMenuOpen(false)
-                  handleNavClick(e, item.protected)
+                  handleNavClick(e, item.href, item.protected)
                 }}
                 className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                   pathname === item.href
@@ -157,16 +232,42 @@ export default function Navbar() {
               </Link>
             ))}
             <div className="mt-4 pt-4 border-t border-cream-200 flex flex-col gap-2">
-              <Link
-                href="/"
-                onClick={(event) => {
+              {isAuthenticated && (
+                <div className="rounded-2xl bg-cream-100/80 p-4">
+                  <div className="flex items-center gap-3">
+                    <UserAvatar
+                      image={session?.user?.image}
+                      name={session?.user?.name}
+                      className="h-12 w-12 border border-white/50"
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-sage-800">{userName}</p>
+                      <p className="truncate text-xs text-sage-400">{userEmail}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
                   setMenuOpen(false)
-                  handleAuthClick(event)
+                  handleAuthAction()
                 }}
                 className="btn-ghost w-full justify-center text-sm"
               >
-                {isAuthenticated ? 'Sign Out' : 'Sign In'}
-              </Link>
+                {isAuthenticated ? (
+                  <>
+                    <UserAvatar
+                      image={session?.user?.image}
+                      name={session?.user?.name}
+                      className="h-8 w-8 border border-white/40"
+                    />
+                    <span>Sign Out</span>
+                  </>
+                ) : (
+                  'Sign In'
+                )}
+              </button>
             </div>
           </div>
         </div>
