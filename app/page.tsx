@@ -1,15 +1,15 @@
 'use client'
 
-import { type MouseEvent, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { signIn, useSession } from 'next-auth/react'
 import Navbar from '@/components/Navbar'
-import FlaticonIcon from '@/components/FlaticonIcon'
+import MedicalCapsuleAnimation from '@/components/MedicalCapsuleAnimation'
 import {
   Activity, Search, Calendar, Shield, ArrowRight, ChevronRight,
-  Microscope, HeartPulse, ClipboardList, Star, Check, Sparkles
+  Microscope, HeartPulse, ClipboardList, Star, Sparkles
 } from 'lucide-react'
 
 if (typeof window !== 'undefined') {
@@ -46,29 +46,17 @@ export default function LandingPage() {
   const blobRef = useRef<HTMLDivElement>(null)
   const statsRef = useRef<HTMLDivElement>(null)
   const featuresRef = useRef<HTMLDivElement>(null)
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [callbackUrl, setCallbackUrl] = useState('/dashboard')
   const { status } = useSession()
-  const authLoading = status === 'loading'
+  const isAuthenticated = status === 'authenticated'
 
-  const handleGoogleSignIn = async () => {
-    if (status === 'authenticated') return
-    await signIn('google', { callbackUrl })
+  const handleCta = (href: string) => {
+    if (isAuthenticated) {
+      window.location.href = href
+    } else {
+      void signIn('google')
+    }
   }
 
-  const handlePrimaryAuthClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (status === 'authenticated' || authLoading) return
-    event.preventDefault()
-    void handleGoogleSignIn()
-  }
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    setCallbackUrl(params.get('callbackUrl') || '/dashboard')
-  }, [])
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -174,12 +162,12 @@ export default function LandingPage() {
             </p>
 
             <div ref={ctaRef} className="flex flex-wrap gap-4 items-center">
-              <Link href="/dashboard" className="btn-primary text-base py-3.5 px-6">
+              <button onClick={() => handleCta('/dashboard')} className="btn-primary text-base py-3.5 px-6">
                 Search Medicines <ArrowRight size={16} />
-              </Link>
-              <Link href="/appointments" className="btn-ghost text-base py-3.5 px-6">
+              </button>
+              <button onClick={() => handleCta('/appointments')} className="btn-ghost text-base py-3.5 px-6">
                 Book Appointment <ChevronRight size={16} />
-              </Link>
+              </button>
             </div>
 
             {/* Trust signals */}
@@ -202,107 +190,9 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Right: Auth Card */}
-          <div className="glass rounded-3xl p-8 shadow-xl border border-cream-200/60 card-lift">
-            {/* Tab Toggle */}
-            <div className="flex bg-cream-100 rounded-2xl p-1 mb-8">
-              {(['signup', 'signin'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setAuthMode(mode)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                    authMode === mode
-                      ? 'bg-white text-sage-800 shadow-sm'
-                      : 'text-sage-500 hover:text-sage-700'
-                  }`}
-                >
-                  {mode === 'signup' ? 'Create Account' : 'Sign In'}
-                </button>
-              ))}
-            </div>
-
-            <div className="space-y-4">
-              {authMode === 'signup' && (
-                <div>
-                  <label className="block text-xs font-semibold text-sage-600 mb-2 uppercase tracking-wide">Full Name</label>
-                  <input
-                    className="input-elegant"
-                    type="text"
-                    placeholder="Enter your name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-sage-600 mb-2 uppercase tracking-wide">Email</label>
-                <input
-                  className="input-elegant"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-sage-600 mb-2 uppercase tracking-wide">Password</label>
-                <input
-                  className="input-elegant"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-
-              <Link
-                href="/dashboard"
-                onClick={handlePrimaryAuthClick}
-                className={`btn-primary w-full justify-center mt-2 text-sm py-3.5 ${authLoading ? 'pointer-events-none opacity-80' : ''}`}
-                aria-disabled={authLoading}
-              >
-                {authMode === 'signup' ? 'Create Account' : 'Sign In'}
-                <ArrowRight size={15} />
-              </Link>
-            </div>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-5">
-              <div className="h-px flex-1 bg-cream-200" />
-              <span className="text-xs text-sage-300 font-medium">or continue with</span>
-              <div className="h-px flex-1 bg-cream-200" />
-            </div>
-
-            {/* Social Auth */}
-            <div className="grid grid-cols-2 gap-3">
-              {['Google', 'Apple'].map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={p === 'Google' ? () => void handleGoogleSignIn() : undefined}
-                  className={`btn-ghost text-sm py-2.5 justify-center ${authLoading ? 'pointer-events-none opacity-80' : ''}`}
-                  disabled={authLoading}
-                >
-                  <FlaticonIcon
-                    icon={p === 'Google' ? 'fi-brands-google' : 'fi-brands-apple'}
-                    className="text-sm"
-                  />
-                  {p}
-                </button>
-              ))}
-            </div>
-
-            {/* Features listed */}
-            <div className="mt-6 pt-5 border-t border-cream-200">
-              {['No credit card required', 'HIPAA-compliant & secure'].map((item) => (
-                <div key={item} className="flex items-center gap-2.5 text-xs text-sage-500 mt-2">
-                  <Check size={13} className="text-sage-500 shrink-0" />
-                  {item}
-                </div>
-              ))}
-            </div>
+          {/* Right: GSAP Medical Animation */}
+          <div className="hidden lg:flex items-center justify-center w-full">
+            <MedicalCapsuleAnimation />
           </div>
         </div>
       </section>
@@ -395,12 +285,12 @@ export default function LandingPage() {
             Join over 200,000 people who trust Shifa AI to understand their medications and manage their health smartly.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
-            <Link href="/dashboard" className="btn-primary text-base py-4 px-8">
+            <button onClick={() => handleCta('/dashboard')} className="btn-primary text-base py-4 px-8">
               Start for free <ArrowRight size={16} />
-            </Link>
-            <Link href="/appointments" className="btn-ghost text-base py-4 px-8">
+            </button>
+            <button onClick={() => handleCta('/appointments')} className="btn-ghost text-base py-4 px-8">
               Book a demo
-            </Link>
+            </button>
           </div>
         </div>
       </section>

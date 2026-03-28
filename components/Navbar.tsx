@@ -4,14 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { gsap } from 'gsap'
-import { signOut, useSession } from 'next-auth/react'
+import { signIn, signOut, useSession } from 'next-auth/react'
 import { Activity, Menu, X } from 'lucide-react'
 import ThemeToggle from '@/components/ThemeToggle'
 
 const navItems = [
-  { href: '/', label: 'Home' },
-  { href: '/dashboard', label: 'Medicine Search' },
-  { href: '/appointments', label: 'Appointments' },
+  { href: '/', label: 'Home', protected: false },
+  { href: '/dashboard', label: 'Medicine Search', protected: true },
+  { href: '/appointments', label: 'Appointments', protected: true },
 ]
 
 export default function Navbar() {
@@ -24,9 +24,19 @@ export default function Navbar() {
   const isAuthenticated = status === 'authenticated'
 
   const handleAuthClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (!isAuthenticated) return
     event.preventDefault()
-    void signOut({ callbackUrl: '/' })
+    if (isAuthenticated) {
+      void signOut({ callbackUrl: '/' })
+    } else {
+      void signIn('google')
+    }
+  }
+
+  const handleNavClick = (event: React.MouseEvent<HTMLAnchorElement>, isProtected: boolean) => {
+    if (isProtected && !isAuthenticated) {
+      event.preventDefault()
+      void signIn('google')
+    }
   }
 
   useEffect(() => {
@@ -76,6 +86,7 @@ export default function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={(e) => handleNavClick(e, item.protected)}
                   className={`nav-link text-sm font-medium transition-colors duration-200 whitespace-nowrap ${
                     pathname === item.href
                       ? 'text-sage-700 active'
@@ -132,7 +143,10 @@ export default function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => setMenuOpen(false)}
+                onClick={(e) => {
+                  setMenuOpen(false)
+                  handleNavClick(e, item.protected)
+                }}
                 className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                   pathname === item.href
                     ? 'bg-sage-100 text-sage-800'
