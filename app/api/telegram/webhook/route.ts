@@ -11,7 +11,7 @@ const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
  *   /start <userId>
  * 
  * Set this webhook URL in BotFather or via the Telegram API:
- *   https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-domain.com/api/telegram/webhook
+ *   curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-app.vercel.app/api/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"
  */
 export async function POST(req: NextRequest) {
   try {

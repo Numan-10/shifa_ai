@@ -1,89 +1,79 @@
-# Shifa AI Production Deployment Guide
+# Deploy Shifa AI For Free
 
-This guide is for one simple goal:
+This guide shows how to put **Shifa AI** on the internet using the **free tier of Vercel** step by step.
 
-Get **Shifa AI** live on the internet using:
+We will go very slowly.
 
-- `Vercel Hobby` for the website
-- `Convex` for the backend
-- `Google` for login
-- `Gemini` for AI
+Imagine this app is made of 4 small boxes:
 
-If you follow these steps in order, you should not get stuck.
+1. **GitHub** keeps your code
+2. **Vercel** shows your website to the world
+3. **Convex** runs the backend and database
+4. **Google** lets people sign in with Google
 
-Think of it like 4 boxes:
+We will connect the boxes one by one.
 
-1. `GitHub` holds your code
-2. `Vercel` shows your website
-3. `Convex` runs your backend
-4. `Google` handles login and Gemini
-
-We are going to connect all 4 boxes together.
+If you follow this in order, you should be okay even if this is your first deployment.
 
 ---
 
-## Super Short Version
+## Before You Start
 
-If you are in a hurry, this is the whole flow:
-
-1. Make sure the app works locally
-2. Create a Convex production deployment
-3. Put Gemini keys in Convex production
-4. Create a Google OAuth web app
-5. Import the project into Vercel
-6. Add env vars in Vercel
-7. Set the Vercel build command
-8. Deploy
-9. Test Google sign-in and protected pages
-
-The rest of this file explains each step slowly.
-
----
-
-## Step 0: What You Need Before Starting
-
-You need these accounts:
+Make sure you have these accounts:
 
 - GitHub
 - Vercel
 - Convex
 - Google Cloud Console
 - Google AI Studio
+- Apify
+- Exa
+- Telegram / BotFather
 
-You also need the project code pushed to GitHub.
+Also make sure your code is already in a GitHub repo.
 
 ---
 
-## Step 1: Make Sure It Works On Your Computer First
+## What You Are Building
+
+When we finish, you will have:
+
+- a live website like `https://your-project.vercel.app`
+- Google sign-in working
+- Convex backend working
+- medicine search working
+- OCR working
+- price comparison working
+- Exa search sources working
+- optional Telegram bot webhook working
+
+---
+
+## Step 1: Make Sure The App Works On Your Computer
 
 Open the project folder and run:
 
-```powershell
+```bash
 npm install
 npx convex dev
-npx tsc --noEmit
 npm run build
 ```
 
-If all 4 commands work, good.
+If these work, great.
 
-If `npx convex dev` works, it should create `.env.local` and add:
+If they do not work locally, fix that first.
 
-```env
-CONVEX_DEPLOYMENT=...
-NEXT_PUBLIC_CONVEX_URL=...
-NEXT_PUBLIC_CONVEX_SITE_URL=...
-```
-
-Do not skip this step.
-
-If it does not work locally, deployment will be harder.
+Local success is the easiest sign that deployment will go smoothly.
 
 ---
 
-## Step 2: Understand Which Secrets Go Where
+## Step 2: Understand Where Each Secret Goes
 
-This is the most important thing to understand.
+This is the most important part.
+
+Some keys go to **Vercel**.  
+Some keys go to **Convex**.  
+Some stay only on **your computer**.
 
 ### Put these in Vercel
 
@@ -96,20 +86,28 @@ AUTH_GOOGLE_ID=
 AUTH_GOOGLE_SECRET=
 CONVEX_DEPLOY_KEY=
 NEXT_PUBLIC_CONVEX_URL=
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash-lite
+APIFY_API_TOKEN=
+EXA_API_KEY=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=
 ```
 
-### Put these in Convex production
+### Put these in Convex Production
 
 These are used by Convex actions:
 
 ```env
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash-lite
+TELEGRAM_BOT_TOKEN=
 ```
 
 ### Put these only in `.env.local`
 
-These are for your local computer only:
+These stay on your computer:
 
 ```env
 NEXTAUTH_URL=http://localhost:3000
@@ -121,32 +119,24 @@ NEXT_PUBLIC_CONVEX_URL=
 NEXT_PUBLIC_CONVEX_SITE_URL=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash-lite
+APIFY_API_TOKEN=
+EXA_API_KEY=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=
 ```
 
-Important:
+Easy memory trick:
 
-- `.env.example` is only a sample
-- `.env.local` is for real local secrets
-- Vercel has its own env section
-- Convex has its own env section
+- **Vercel** = website secrets
+- **Convex** = backend action secrets
+- **.env.local** = only your own computer
+
+Never push `.env.local` to GitHub.
 
 ---
 
-## Step 3: Create A Real `AUTH_SECRET`
-
-Run this:
-
-```powershell
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-Copy the output.
-
-Use that as:
-
-```env
-AUTH_SECRET=your_generated_secret_here
-```
+## Step 3: Make A Strong `AUTH_SECRET`
 
 Do not use:
 
@@ -154,106 +144,126 @@ Do not use:
 AUTH_SECRET=supersecretkey
 ```
 
-That is too weak for production.
+That is not safe for production.
 
----
+Make a real one with:
 
-## Step 4: Create Or Find Your Convex Production Deployment
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
 
-Open the Convex dashboard.
+Copy the result.
 
-Then:
-
-1. open your project
-2. find the `production` deployment
-3. copy the production deployment URL
-4. copy the production deploy key
-
-You will need:
-
-- `NEXT_PUBLIC_CONVEX_URL`
-- `CONVEX_DEPLOY_KEY`
-
-They will look something like this:
+Use it as:
 
 ```env
-NEXT_PUBLIC_CONVEX_URL=https://your-production-name.convex.cloud
-CONVEX_DEPLOY_KEY=your_long_secret_key
+AUTH_SECRET=your-long-random-secret
 ```
 
 ---
 
-## Step 5: Put Gemini In Convex Production
+## Step 4: Prepare Convex Production
 
-This part is easy to miss.
+Go to your **Convex dashboard**.
 
-Gemini is used inside Convex actions, so the Gemini key must be stored in Convex production.
+Then:
 
-First get a Gemini API key from:
+1. Open your project
+2. Find the **production** deployment
+3. Copy the **production URL**
+4. Copy the **deploy key**
 
-https://aistudio.google.com/app/apikey
+You will need both later.
 
-Then run:
+They look like this:
 
-```powershell
-npx convex env set --prod GEMINI_API_KEY YOUR_GEMINI_KEY
-npx convex env set --prod GEMINI_MODEL gemini-2.5-flash-lite
+```env
+NEXT_PUBLIC_CONVEX_URL=https://your-project.convex.cloud
+CONVEX_DEPLOY_KEY=your-secret-deploy-key
+```
+
+---
+
+## Step 5: Add Convex Production Secrets
+
+Open your terminal and run:
+
+```bash
+npx convex env set --prod GEMINI_API_KEY "YOUR_GEMINI_KEY"
+npx convex env set --prod GEMINI_MODEL "gemini-2.5-flash-lite"
+npx convex env set --prod TELEGRAM_BOT_TOKEN "YOUR_TELEGRAM_BOT_TOKEN"
+```
+
+Then check them:
+
+```bash
 npx convex env list --prod
 ```
 
-If `GEMINI_API_KEY` is missing in Convex production, the app will still run, but medicine analysis will return fallback text instead of real AI results.
+You should see:
+
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+- `TELEGRAM_BOT_TOKEN`
+
+Important:
+
+- Gemini is needed in **Convex**
+- Telegram bot token is needed in **Convex**
+- If they are missing, some features will silently fail
 
 ---
 
-## Step 6: Create Google Login For Production
+## Step 6: Create Google Login
 
-Open Google Cloud Console.
+Go to **Google Cloud Console**.
 
 Then:
 
-1. go to `APIs & Services`
-2. go to `Credentials`
-3. create or open an `OAuth 2.0 Client ID`
-4. choose `Web application`
+1. Open `APIs & Services`
+2. Open `Credentials`
+3. Click `Create Credentials`
+4. Choose `OAuth client ID`
+5. Choose `Web application`
 
-You will get:
+Google will give you:
 
 - `AUTH_GOOGLE_ID`
 - `AUTH_GOOGLE_SECRET`
 
-Do not close this page yet.
+Keep that page open.
 
 We still need to add URLs.
 
 ---
 
-## Step 7: Create The Correct Google URLs
+## Step 7: Add Google URLs
 
-Google needs 2 kinds of URLs.
+Google needs 2 things:
 
-### Authorized JavaScript origins
+### 1. Authorized JavaScript origins
 
-Add your local origin:
+Add:
 
 ```text
 http://localhost:3000
 ```
 
-Later, add your production Vercel URL:
+Later, after Vercel gives you your live URL, also add:
 
 ```text
 https://your-project.vercel.app
 ```
 
-### Authorized redirect URIs
+### 2. Authorized redirect URIs
 
-Add your local callback:
+Add:
 
 ```text
 http://localhost:3000/api/auth/callback/google
 ```
 
-Later, add your production callback:
+Later also add:
 
 ```text
 https://your-project.vercel.app/api/auth/callback/google
@@ -261,137 +271,138 @@ https://your-project.vercel.app/api/auth/callback/google
 
 Very important:
 
-- `origin` is just domain + port
-- `redirect URI` is the full callback path
-- do not mix them up
+- **Origin** is only domain + port
+- **Redirect URI** is the full callback path
 
-Wrong:
-
-```text
-https://your-project.vercel.app/api/auth/callback/google
-```
-
-inside the origin box.
-
-Right:
-
-```text
-https://your-project.vercel.app
-```
-
-inside the origin box.
+If these are wrong, Google login will fail with `redirect_uri_mismatch`.
 
 ---
 
 ## Step 8: Push Your Code To GitHub
 
-Before Vercel can deploy, your code should be in GitHub.
+Before Vercel can deploy, your code must be on GitHub.
 
-Make sure these files are committed:
+Make sure:
 
-- app code
-- convex code
+- your app code is committed
+- `.env.local` is not committed
+- real secrets are not committed
+
+Good things to commit:
+
+- app files
+- Convex files
 - `README.md`
 - `DEPLOYMENT.md`
+- `.env.example`
 
-Make sure these are **not** committed:
+Bad things to commit:
 
 - `.env.local`
-- real secrets
+- real API keys
+- bot tokens
+- Google secrets
 
 ---
 
-## Step 9: Import The Project Into Vercel
+## Step 9: Import The Repo Into Vercel
 
-Open Vercel.
+Go to **Vercel**.
 
 Then:
 
-1. click `Add New Project`
-2. import your GitHub repo
-3. let Vercel detect `Next.js`
-4. keep the root folder as the repo root
-5. open project settings after import
+1. Click `Add New`
+2. Click `Project`
+3. Import your GitHub repository
+4. Let Vercel detect `Next.js`
+5. Keep the root folder as the project root
 
-Now we will configure it.
+Do not click deploy yet.
+
+We still need to add settings.
 
 ---
 
-## Step 10: Set The Vercel Build Command
+## Step 10: Set The Build Command
 
 In Vercel project settings, find the build settings.
 
-Set the build command to:
+Set the **Build Command** to:
 
 ```bash
 npx convex deploy --cmd "npm run build"
 ```
 
-Why this matters:
+Why?
 
-- `npx convex deploy` sends your Convex backend code to production
-- `npm run build` builds your Next.js app
+Because this project needs:
 
-This is the easiest setup for this project.
+- Convex backend deployed
+- Next.js app built
+
+This one command does both in the right order.
 
 ---
 
 ## Step 11: Add Environment Variables In Vercel
 
-Open:
+In Vercel, open:
 
 `Project Settings -> Environment Variables`
 
-Add these values for `Production`:
+Add these for **Production**:
 
 ```env
 NEXTAUTH_URL=https://your-project.vercel.app
-AUTH_SECRET=your_generated_secret
-AUTH_GOOGLE_ID=your_google_client_id
-AUTH_GOOGLE_SECRET=your_google_client_secret
-CONVEX_DEPLOY_KEY=your_convex_production_deploy_key
-NEXT_PUBLIC_CONVEX_URL=https://your-production-deployment.convex.cloud
+AUTH_SECRET=your-long-random-secret
+AUTH_GOOGLE_ID=your-google-client-id
+AUTH_GOOGLE_SECRET=your-google-client-secret
+CONVEX_DEPLOY_KEY=your-convex-deploy-key
+NEXT_PUBLIC_CONVEX_URL=https://your-project.convex.cloud
+GEMINI_API_KEY=your-gemini-key
+GEMINI_MODEL=gemini-2.5-flash-lite
+APIFY_API_TOKEN=your-apify-token
+EXA_API_KEY=your-exa-key
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_WEBHOOK_SECRET=your-own-random-secret
+NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=your_bot_username
 ```
 
-If you already connected a custom domain, use that instead of `your-project.vercel.app`:
-
-```env
-NEXTAUTH_URL=https://yourdomain.com
-```
-
-Keep it simple on the free tier:
-
-- configure `Production`
-- ignore `Preview` for now
-
-That avoids Google auth problems on random preview URLs.
-
----
-
-## Step 12: Do The First Deploy
-
-Now trigger a deployment in Vercel.
-
-You can do that by:
-
-1. pushing a commit to your main branch
-2. or clicking redeploy in Vercel
-
-Wait until the deployment says `Ready`.
-
-Then open the production URL.
-
-Example:
+If you are using the free Vercel URL, `NEXTAUTH_URL` should look like:
 
 ```text
 https://your-project.vercel.app
 ```
 
+If you later connect a custom domain, use that instead.
+
 ---
 
-## Step 13: Finish Google OAuth For The Real Production URL
+## Step 12: Press Deploy
 
-Now that Vercel gave you the real production URL, go back to Google Cloud Console and make sure the real URL is added.
+Now go back to Vercel and deploy the project.
+
+Wait patiently.
+
+When it finishes, Vercel will show your live website URL.
+
+It will look something like:
+
+```text
+https://your-project.vercel.app
+```
+
+Copy it.
+
+You still need it for Google and Telegram.
+
+---
+
+## Step 13: Finish Google Login With The Real Vercel URL
+
+Go back to Google Cloud Console.
+
+Now add your real live Vercel URL.
 
 If your site is:
 
@@ -413,36 +424,85 @@ https://shifa-ai.vercel.app
 https://shifa-ai.vercel.app/api/auth/callback/google
 ```
 
-If you use a custom domain, add that too.
+Save the Google settings.
+
+Now Google login should work on the live site too.
 
 ---
 
-## Step 14: Test The Live Site
+## Step 14: Optional Telegram Bot Setup
 
-Test these one by one:
+If you want Telegram reminders, do this part too.
 
-1. homepage opens
-2. Google sign-in button opens Google
-3. login succeeds
-4. after login, you return to the app
-5. `/dashboard` opens when logged in
-6. `/appointments` opens when logged in
-7. if logged out, those protected pages redirect back to `/`
+### In Vercel, make sure these exist
 
-If all 7 work, your production deployment is basically correct.
+```env
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=
+```
+
+### In Convex, make sure this exists
+
+```env
+TELEGRAM_BOT_TOKEN=
+```
+
+### Register the webhook
+
+Run this after your Vercel site is live:
+
+```bash
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-project.vercel.app/api/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+```
+
+Replace:
+
+- `<TOKEN>` with your Telegram bot token
+- `https://your-project.vercel.app` with your real live site URL
+- `<TELEGRAM_WEBHOOK_SECRET>` with the same secret you put into Vercel
+
+Then verify:
+
+```bash
+curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+```
+
+If it looks correct, Telegram is connected.
 
 ---
 
-## Step 15: Easy Troubleshooting
+## Step 15: Test The Live App
 
-### Problem: Vercel build fails before the app builds
+Open your live site and test these one by one:
 
-Usually this means:
+1. Home page opens
+2. Theme toggle works
+3. Google sign-in works
+4. After login, protected pages open
+5. `/dashboard` opens
+6. Medicine search works
+7. Prescription upload works
+8. Price comparison works
+9. Exa search sources appear
+10. `/appointments` opens
+11. Telegram works if you set it up
 
-- `CONVEX_DEPLOY_KEY` is missing in Vercel
-- or the build command is wrong
+If all of these work, you are live.
 
-Check:
+---
+
+## Step 16: Troubleshooting
+
+### Problem: Vercel build fails
+
+Usually this means one of these is missing in Vercel:
+
+- `CONVEX_DEPLOY_KEY`
+- `NEXT_PUBLIC_CONVEX_URL`
+- `GEMINI_API_KEY`
+
+Also check that your build command is exactly:
 
 ```bash
 npx convex deploy --cmd "npm run build"
@@ -450,97 +510,103 @@ npx convex deploy --cmd "npm run build"
 
 ### Problem: Google says `redirect_uri_mismatch`
 
-Usually this means the Google callback URL does not exactly match your real production URL.
+The Google callback URL is wrong or missing.
 
-It must match exactly:
+It must match your real live site exactly:
 
 ```text
 https://your-project.vercel.app/api/auth/callback/google
 ```
 
-### Problem: Google sign-in button does nothing in production
+### Problem: Google sign-in button does not work
 
-Usually one of these is missing in Vercel:
+Check Vercel for:
 
 - `NEXTAUTH_URL`
 - `AUTH_SECRET`
 - `AUTH_GOOGLE_ID`
 - `AUTH_GOOGLE_SECRET`
 
-### Problem: Medicine analysis shows fallback text only
+### Problem: OCR or medicine explanation does not work
 
-Usually this means Gemini was not added to Convex production.
+Check:
 
-Run:
+- `GEMINI_API_KEY` in Vercel
+- `GEMINI_MODEL` in Vercel
+- `GEMINI_API_KEY` in Convex
+- `GEMINI_MODEL` in Convex
 
-```powershell
-npx convex env list --prod
-```
+Gemini is needed in **both places** in this project.
 
-Make sure you see:
+### Problem: Price comparison does not work
 
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL`
+Check Vercel for:
 
-### Problem: Local works but production does not
+- `APIFY_API_TOKEN`
 
-That usually means:
+### Problem: Trusted search sources do not work
 
-- local `.env.local` is correct
-- Vercel env vars are missing
-- or Google production URLs were not added
+Check Vercel for:
 
----
+- `EXA_API_KEY`
 
-## Step 16: Best Free-Tier Setup
+### Problem: Telegram does not work
 
-To keep things easy and cheap:
+Check:
 
-- use `Vercel Hobby`
-- use one `Convex production deployment`
-- use `gemini-2.5-flash-lite`
-- use one Google OAuth app for:
-  - `localhost`
-  - your one production URL
-
-Do not try to fully support every preview deployment on day one.
-
-That is where most beginner auth headaches come from.
+- `TELEGRAM_BOT_TOKEN` in Vercel
+- `TELEGRAM_BOT_TOKEN` in Convex
+- `TELEGRAM_WEBHOOK_SECRET` in Vercel
+- webhook URL is registered correctly
 
 ---
 
-## Step 17: The Exact Checklist
+## Step 17: Super Simple Checklist
 
-If you want the simplest checklist possible, do this in order:
+If you want the smallest possible checklist, do this:
 
-1. Run `npx convex dev`
-2. Generate `AUTH_SECRET`
-3. Get `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`
-4. Get `CONVEX_DEPLOY_KEY`
-5. Get `NEXT_PUBLIC_CONVEX_URL` from Convex production
-6. Get `GEMINI_API_KEY`
-7. Run `npx convex env set --prod GEMINI_API_KEY ...`
-8. Run `npx convex env set --prod GEMINI_MODEL gemini-2.5-flash-lite`
-9. Import repo into Vercel
-10. Set build command to `npx convex deploy --cmd "npm run build"`
-11. Add Vercel production env vars
-12. Add Google production origin and callback URL
-13. Deploy
-14. Test login
-15. Test `/dashboard`
-16. Test `/appointments`
+1. Run the app locally
+2. Create a strong `AUTH_SECRET`
+3. Prepare Convex production
+4. Put Gemini and Telegram bot token into Convex
+5. Create Google OAuth credentials
+6. Add localhost Google URLs
+7. Push code to GitHub
+8. Import repo into Vercel
+9. Set build command
+10. Add Vercel environment variables
+11. Deploy
+12. Add the real Vercel URL to Google
+13. Test the live app
+14. Optional: connect Telegram webhook
+
+---
+
+## Free-Tier Advice
+
+To keep things simple and free:
+
+- use **Vercel Hobby**
+- use one **Convex production deployment**
+- use one Google OAuth app
+- use one Telegram bot
+- start with the default `vercel.app` domain first
+
+Do not try to make everything perfect on day one.
+
+First make it work.
+
+Then make it fancy.
 
 ---
 
 ## Official Docs
 
-These are the main references behind this guide:
-
-- Vercel env vars: https://vercel.com/docs/environment-variables
-- Vercel project settings: https://vercel.com/docs/project-configuration/project-settings
-- Convex CLI: https://docs.convex.dev/cli
-- Convex env vars: https://docs.convex.dev/production/environment-variables
-- NextAuth: https://next-auth.js.org/
-- Google OAuth web apps: https://developers.google.com/identity/protocols/oauth2/web-server
-- Gemini API keys: https://ai.google.dev/gemini-api/docs/api-key
-- Gemini pricing: https://ai.google.dev/gemini-api/docs/pricing
+- Vercel: https://vercel.com/docs
+- Convex: https://docs.convex.dev
+- NextAuth: https://next-auth.js.org
+- Google OAuth: https://developers.google.com/identity/protocols/oauth2
+- Gemini API: https://ai.google.dev
+- Apify: https://docs.apify.com
+- Exa: https://docs.exa.ai
+- Telegram Bot API: https://core.telegram.org/bots/api

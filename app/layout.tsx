@@ -34,7 +34,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning className={`${playfair.variable} ${dmSans.variable} ${dmMono.variable}`}>
-      <body className="font-body bg-cream-50 text-sage-900 antialiased">
+      <body className="font-body antialiased">
         <script
           dangerouslySetInnerHTML={{
             __html: `

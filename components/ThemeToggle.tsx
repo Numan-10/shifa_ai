@@ -32,6 +32,36 @@ export default function ThemeToggle() {
     const initialTheme = getPreferredTheme()
     setTheme(initialTheme)
     applyTheme(initialTheme)
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleMediaChange = (event: MediaQueryListEvent) => {
+      const storedTheme = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY)
+      if (storedTheme === 'light' || storedTheme === 'dark') {
+        return
+      }
+
+      const nextTheme = event.matches ? 'dark' : 'light'
+      setTheme(nextTheme)
+      applyTheme(nextTheme)
+    }
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY && event.key !== LEGACY_STORAGE_KEY) {
+        return
+      }
+
+      const nextTheme = getPreferredTheme()
+      setTheme(nextTheme)
+      applyTheme(nextTheme)
+    }
+
+    mediaQuery.addEventListener('change', handleMediaChange)
+    window.addEventListener('storage', handleStorageChange)
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleMediaChange)
+      window.removeEventListener('storage', handleStorageChange)
+    }
   }, [])
 
   const nextTheme = theme === 'light' ? 'dark' : 'light'

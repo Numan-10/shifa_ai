@@ -1,11 +1,14 @@
 ﻿'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useAction } from 'convex/react'
+import { anyApi } from 'convex/server'
 import { gsap } from 'gsap'
+import { useSession } from 'next-auth/react'
 import Navbar from '@/components/Navbar'
 import FlaticonIcon from '@/components/FlaticonIcon'
 import {
-  Search, Mic, MicOff, Upload, X, ChevronDown, ChevronUp,
+  Search, Upload, X, ChevronDown, ChevronUp,
   Pill, AlertTriangle, Activity, DollarSign, FlaskConical,
   Stethoscope, ShieldCheck, Clock, ExternalLink, Loader2, FileText,
   CheckCircle2, Sparkles, ChevronRight, ScanLine, ImageOff
@@ -16,6 +19,13 @@ interface ExtractedMedicine {
   name: string
   dosage: string
   instructions: string
+}
+
+interface MedicineSource {
+  title: string
+  url: string
+  domain: string
+  snippet: string
 }
 
 // ---- Mock medicine database ----
@@ -83,15 +93,58 @@ interface MedicineData {
   name: string; brand: string; chemical: string; category: string;
   uses: string[]; dosage: { adult: string; child: string; max: string };
   sideEffects: string[]; prevention: string[];
-  prices: { store: string; price: string; generic: boolean; available: boolean }[];
+  prices: { store: string; price: string; generic: boolean; available: boolean; url?: string }[];
   interactions: string[]; pregnancy: string; controlled: boolean;
+  sources?: MedicineSource[];
+  timing?: string[];
+  source?: 'mock' | 'cache' | 'gemini' | 'fallback';
+  cached?: boolean;
 }
 
 const sectionColors: Record<string, string> = {
-  uses: '#527d56', dosage: '#4a9e8e', sideEffects: '#e07b5a', prevention: '#8b7fb8', prices: '#cab87e'
+  uses: '#527d56', dosage: '#4a9e8e', sideEffects: '#e07b5a', prevention: '#8b7fb8', prices: '#cab87e', timing: '#4a9e8e'
+}
+
+function createLiveMedicineData(liveResult: {
+  name: string
+  purpose: string
+  dosage: string
+  precautions: string[]
+  sideEffects: string[]
+  timing: string[]
+  source: 'cache' | 'gemini' | 'fallback'
+  cached: boolean
+}): MedicineData {
+  const timingSummary =
+    liveResult.timing[0] ?? 'Follow the prescription label or ask a pharmacist for timing guidance.'
+
+  return {
+    name: liveResult.name,
+    brand: liveResult.cached ? 'Saved analysis' : 'AI-generated overview',
+    chemical: 'Detailed chemical formula is not available in the live response yet.',
+    category: liveResult.source === 'fallback' ? 'General guidance' : 'Medicine analysis',
+    uses: [liveResult.purpose],
+    dosage: {
+      adult: liveResult.dosage,
+      child: 'Please confirm children dosing with a doctor or pharmacist.',
+      max: timingSummary,
+    },
+    sideEffects: liveResult.sideEffects,
+    prevention: liveResult.precautions,
+    prices: [],
+    interactions: [],
+    pregnancy: 'Please confirm pregnancy safety with a doctor or pharmacist.',
+    controlled: false,
+    sources: [],
+    timing: liveResult.timing,
+    source: liveResult.source,
+    cached: liveResult.cached,
+  }
 }
 
 export default function DashboardPage() {
+  const { data: session } = useSession()
+  const analyzeMedicine = useAction(anyApi.actions.analyzeMedicine.analyzeMedicine)
   const pageRef = useRef<HTMLDivElement>(null)
   const searchBarRef = useRef<HTMLDivElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
@@ -100,7 +153,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<MedicineData | null>(null)
   const [notFound, setNotFound] = useState(false)
-  const [listening, setListening] = useState(false)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     uses: true, dosage: true, sideEffects: false, prevention: false, prices: true
   })
@@ -111,6 +163,60 @@ export default function DashboardPage() {
   const [ocrConfidence, setOcrConfidence] = useState<'high' | 'medium' | 'low' | null>(null)
   const [ocrError, setOcrError] = useState<string | null>(null)
   const [pricesLoading, setPricesLoading] = useState(false)
+  const [sourcesLoading, setSourcesLoading] = useState(false)
+
+  const fetchPriceComparison = useCallback(async (
+    medicineName: string,
+    fallbackPrices: MedicineData['prices'] = [],
+  ) => {
+    setPricesLoading(true)
+
+    try {
+      const response = await fetch('/api/prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ medicineName }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Price request failed with status ${response.status}`)
+      }
+
+      const data = await response.json() as { prices?: MedicineData['prices'] }
+      const nextPrices = data.prices && data.prices.length > 0 ? data.prices : fallbackPrices
+
+      setResult((current) => current ? { ...current, prices: nextPrices } : current)
+    } catch (error) {
+      console.error('Price comparison failed', error)
+      setResult((current) => current ? { ...current, prices: fallbackPrices } : current)
+    } finally {
+      setPricesLoading(false)
+    }
+  }, [])
+
+  const fetchSearchSources = useCallback(async (medicineName: string) => {
+    setSourcesLoading(true)
+
+    try {
+      const response = await fetch('/api/medicine-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ medicineName }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Source request failed with status ${response.status}`)
+      }
+
+      const data = await response.json() as { sources?: MedicineSource[] }
+      setResult((current) => current ? { ...current, sources: data.sources ?? [] } : current)
+    } catch (error) {
+      console.error('Trusted source search failed', error)
+      setResult((current) => current ? { ...current, sources: [] } : current)
+    } finally {
+      setSourcesLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -127,6 +233,8 @@ export default function DashboardPage() {
     setLoading(true)
     setResult(null)
     setNotFound(false)
+    setPricesLoading(false)
+    setSourcesLoading(false)
 
     // Simulate API delay
     await new Promise(r => setTimeout(r, 1200))
@@ -134,11 +242,30 @@ export default function DashboardPage() {
     const key = searchQuery.toLowerCase().trim()
     const found = Object.keys(MOCK_DB).find(k => key.includes(k) || k.includes(key))
 
-    if (found) {
-      setResult(MOCK_DB[found])
-      setPricesLoading(true)
-      setTimeout(() => setPricesLoading(false), 800)
-    } else {
+    try {
+      if (found) {
+        const nextResult: MedicineData = {
+          ...MOCK_DB[found],
+          source: 'mock',
+          cached: true,
+        }
+
+        setResult(nextResult)
+        void fetchPriceComparison(nextResult.name, nextResult.prices)
+        void fetchSearchSources(nextResult.name)
+      } else {
+        const liveResult = await analyzeMedicine({
+          medicineName: searchQuery,
+          userId: session?.user?.email ?? undefined,
+        })
+
+        const nextResult = createLiveMedicineData(liveResult)
+        setResult(nextResult)
+        void fetchPriceComparison(nextResult.name)
+        void fetchSearchSources(nextResult.name)
+      }
+    } catch (error) {
+      console.error('Medicine search failed', error)
       setNotFound(true)
     }
     setLoading(false)
@@ -152,31 +279,7 @@ export default function DashboardPage() {
         )
       }
     }, 50)
-  }, [query])
-
-  const handleVoice = () => {
-    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      alert('Voice recognition not supported in this browser.')
-      return
-    }
-    const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'en-IN'
-    recognition.interimResults = false
-
-    setListening(true)
-    recognition.start()
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript
-      setQuery(transcript)
-      setListening(false)
-      handleSearch(transcript)
-    }
-
-    recognition.onerror = () => setListening(false)
-    recognition.onend = () => setListening(false)
-  }
+  }, [analyzeMedicine, fetchPriceComparison, fetchSearchSources, query, session?.user?.email])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -271,24 +374,25 @@ export default function DashboardPage() {
       <main className="pt-24 pb-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* ===== PAGE HEADER ===== */}
-        <div className="text-center mb-10">
+        <div className="text-center mb-8 sm:mb-10">
           <div className="pill bg-sage-100 text-sage-600 mx-auto mb-3">Medicine Database</div>
-          <h1 className="font-display text-3xl lg:text-4xl font-bold text-sage-900 mb-2">
+          <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold text-sage-900 mb-2">
             Search any medicine
           </h1>
-          <p className="text-sage-400 max-w-md mx-auto">
+          <p className="text-sage-400 text-sm sm:text-base max-w-md mx-auto">
             Get instant drug info, real-time pricing from top pharmacies, and AI-powered insights.
           </p>
         </div>
 
         {/* ===== SEARCH BAR ===== */}
-        <div ref={searchBarRef} className="glass rounded-2xl p-4 shadow-lg mb-6 max-w-3xl mx-auto">
-          <div className="flex items-center gap-3">
+        <div ref={searchBarRef} className="glass rounded-2xl p-3 sm:p-4 shadow-lg mb-6 max-w-3xl mx-auto">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
             <div className="w-10 h-10 rounded-xl bg-sage-100 flex items-center justify-center shrink-0">
               <Search size={18} className="text-sage-500" />
             </div>
             <input
-              className="flex-1 bg-transparent text-sage-900 placeholder-sage-300 outline-none text-base"
+              className="flex-1 min-w-0 bg-transparent text-sage-900 placeholder-sage-300 outline-none text-sm sm:text-base"
               placeholder="Search by medicine name (e.g. Paracetamol, Ibuprofenâ€¦)"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -299,33 +403,15 @@ export default function DashboardPage() {
                 <X size={16} />
               </button>
             )}
-            <button
-              onClick={handleVoice}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                listening ? 'bg-red-100 text-red-500 animate-pulse' : 'bg-sage-100 text-sage-500 hover:bg-sage-200'
-              }`}
-              title="Voice search"
-            >
-              {listening ? <MicOff size={16} /> : <Mic size={16} />}
-            </button>
+            </div>
             <button
               onClick={() => handleSearch()}
-              className="btn-primary py-2.5 px-5 text-sm"
+              className="btn-primary w-full sm:w-auto py-2.5 px-5 text-sm"
               disabled={loading}
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : 'Search'}
             </button>
           </div>
-
-          {/* Voice Waveform */}
-          {listening && (
-            <div className="mt-3 flex items-center justify-center gap-2">
-              <div className="waveform flex items-end gap-1.5">
-                {[...Array(7)].map((_, i) => <span key={i} />)}
-              </div>
-              <span className="text-xs text-red-500 font-medium ml-2">Listeningâ€¦</span>
-            </div>
-          )}
         </div>
 
         {/* Quick Search Pills */}
@@ -342,7 +428,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ===== MAIN CONTENT GRID ===== */}
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-3 gap-5 lg:gap-6">
 
           {/* LEFT COL â€” Results */}
           <div className="lg:col-span-2 space-y-4" ref={resultsRef}>
@@ -373,17 +459,30 @@ export default function DashboardPage() {
               <div className="space-y-4">
 
                 {/* Header Card */}
-                <div className="glass rounded-2xl p-6 border border-cream-200/60">
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div>
+                <div className="glass rounded-2xl p-4 sm:p-6 border border-cream-200/60">
+                  <div className="flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between gap-4">
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="tag bg-sage-100 text-sage-700">{result.category}</span>
                         {result.controlled && <span className="tag bg-orange-100 text-orange-700">Controlled</span>}
+                        {result.source && result.source !== 'mock' && (
+                          <span className={`tag ${
+                            result.source === 'fallback'
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {result.source === 'cache'
+                              ? 'Cached'
+                              : result.source === 'gemini'
+                                ? 'AI'
+                                : 'Limited data'}
+                          </span>
+                        )}
                       </div>
-                      <h2 className="font-display text-2xl font-bold text-sage-900 mt-2">{result.name}</h2>
+                      <h2 className="font-display text-xl sm:text-2xl font-bold text-sage-900 mt-2 break-words">{result.name}</h2>
                       <p className="text-sage-400 text-sm mt-1">Brands: <span className="text-sage-600 font-medium">{result.brand}</span></p>
                     </div>
-                    <div className="w-14 h-14 rounded-2xl bg-sage-100 flex items-center justify-center shrink-0">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-sage-100 flex items-center justify-center shrink-0 self-start">
                       <Pill size={26} className="text-sage-500" />
                     </div>
                   </div>
@@ -394,11 +493,11 @@ export default function DashboardPage() {
                       <FlaskConical size={14} className="text-sage-500" />
                       <span className="text-xs text-sage-500 font-semibold uppercase tracking-wide">Chemical Formula</span>
                     </div>
-                    <p className="font-mono text-sm text-sage-700 mt-1">{result.chemical}</p>
+                    <p className="font-mono text-xs sm:text-sm text-sage-700 mt-1 break-all">{result.chemical}</p>
                   </div>
 
                   {/* Quick stats */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
                     <div className="p-3 rounded-xl bg-cream-50 border border-cream-200">
                       <p className="text-xs text-sage-400 mb-0.5">Adult Dose</p>
                       <p className="text-xs font-semibold text-sage-700">{result.dosage.adult}</p>
@@ -422,19 +521,19 @@ export default function DashboardPage() {
                 ].map(({ key, icon: Icon, label, content }) => (
                   <div key={key} className="glass rounded-2xl overflow-hidden border border-cream-200/60">
                     <button
-                      className="w-full flex items-center justify-between p-5 hover:bg-cream-50/50 transition-colors"
+                      className="w-full flex items-center justify-between gap-3 p-4 sm:p-5 hover:bg-cream-50/50 transition-colors"
                       onClick={() => toggleSection(key)}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${sectionColors[key]}18` }}>
                           <Icon size={15} style={{ color: sectionColors[key] }} />
                         </div>
-                        <span className="font-semibold text-sage-800 text-sm">{label}</span>
+                        <span className="font-semibold text-sage-800 text-sm text-left">{label}</span>
                       </div>
                       {openSections[key] ? <ChevronUp size={16} className="text-sage-400" /> : <ChevronDown size={16} className="text-sage-400" />}
                     </button>
                     {openSections[key] && (
-                      <div className="px-5 pb-5">
+                      <div className="px-4 pb-4 sm:px-5 sm:pb-5">
                         <div className="grid sm:grid-cols-2 gap-2">
                           {content.map((item, i) => (
                             <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-cream-50 border border-cream-100">
@@ -448,94 +547,177 @@ export default function DashboardPage() {
                   </div>
                 ))}
 
-                {/* PRICE COMPARISON */}
-                <div className="glass rounded-2xl overflow-hidden border border-cream-200/60">
-                  <div className="flex items-center justify-between p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-                        <DollarSign size={15} className="text-amber-600" />
+                {result.timing && result.timing.length > 0 && (
+                  <div className="glass rounded-2xl overflow-hidden border border-cream-200/60">
+                    <button
+                      className="w-full flex items-center justify-between gap-3 p-4 sm:p-5 hover:bg-cream-50/50 transition-colors"
+                      onClick={() => toggleSection('timing')}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                          <Clock size={15} className="text-blue-500" />
+                        </div>
+                        <span className="font-semibold text-sage-800 text-sm text-left">Timing Guidance</span>
                       </div>
-                      <span className="font-semibold text-sage-800 text-sm">Price Comparison</span>
-                    </div>
-                    <span className="text-xs text-sage-400 flex items-center gap-1">
-                      <Activity size={11} />
-                      Live prices
-                    </span>
-                  </div>
-                  <div className="px-5 pb-5">
-                    {pricesLoading ? (
-                      <div className="flex items-center gap-2 text-sage-400 py-4">
-                        <Loader2 size={14} className="animate-spin" />
-                        <span className="text-sm">Fetching current prices from pharmaciesâ€¦</span>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {result.prices.map((p, i) => (
-                          <div key={i} className={`flex items-center justify-between p-3 rounded-xl border ${p.available ? 'bg-white border-cream-200' : 'bg-cream-50 border-cream-100 opacity-60'}`}>
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-sage-100 flex items-center justify-center text-xs font-bold text-sage-600">
-                                {p.store[0]}
-                              </div>
-                              <div>
-                                <p className="text-sm font-semibold text-sage-700">{p.store}</p>
-                                <p className="text-xs text-sage-400">{p.generic ? 'Generic' : 'Branded'} Â· {p.available ? 'In Stock' : 'Out of Stock'}</p>
-                              </div>
+                      {openSections.timing ? <ChevronUp size={16} className="text-sage-400" /> : <ChevronDown size={16} className="text-sage-400" />}
+                    </button>
+                    {openSections.timing && (
+                      <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+                        <div className="grid sm:grid-cols-2 gap-2">
+                          {result.timing.map((item, i) => (
+                            <div key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-cream-50 border border-cream-100">
+                              <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-blue-500" />
+                              <span className="text-sm text-sage-600 leading-relaxed">{item}</span>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <span className="font-display text-lg font-bold text-sage-800">{p.price}</span>
-                              {p.available && (
-                                <button className="text-sage-400 hover:text-sage-600 transition-colors">
-                                  <ExternalLink size={13} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                        <p className="text-xs text-sage-300 mt-2 text-center">Prices updated dynamically via pharmacy APIs</p>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
-                </div>
+                )}
+
+                {/* PRICE COMPARISON */}
+                {(pricesLoading || result.prices.length > 0) && (
+                  <div className="glass rounded-2xl overflow-hidden border border-cream-200/60">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4 sm:p-5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                          <DollarSign size={15} className="text-amber-600" />
+                        </div>
+                        <span className="font-semibold text-sage-800 text-sm">Price Comparison</span>
+                      </div>
+                      <span className="text-xs text-sage-400 flex items-center gap-1 sm:justify-end">
+                        <Activity size={11} />
+                        Live prices
+                      </span>
+                    </div>
+                    <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+                      {pricesLoading ? (
+                        <div className="flex items-center gap-2 text-sage-400 py-4">
+                          <Loader2 size={14} className="animate-spin" />
+                          <span className="text-sm">Fetching current prices from pharmaciesâ€¦</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {result.prices.map((p, i) => (
+                            <div key={i} className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-3 rounded-xl border ${p.available ? 'bg-white border-cream-200' : 'bg-cream-50 border-cream-100 opacity-60'}`}>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-sage-100 flex items-center justify-center text-xs font-bold text-sage-600">
+                                  {p.store[0]}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-sage-700 break-words">{p.store}</p>
+                                  <p className="text-xs text-sage-400">{p.generic ? 'Generic' : 'Branded'} Â· {p.available ? 'In Stock' : 'Out of Stock'}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between sm:justify-end gap-3">
+                                <span className="font-display text-lg font-bold text-sage-800">{p.price}</span>
+                                {p.available && p.url && (
+                                  <a
+                                    href={p.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sage-400 hover:text-sage-600 transition-colors"
+                                  >
+                                    <ExternalLink size={13} />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          <p className="text-xs text-sage-300 mt-2 text-center">Prices updated dynamically via pharmacy APIs</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {(sourcesLoading || (result.sources?.length ?? 0) > 0) && (
+                  <div className="glass rounded-2xl overflow-hidden border border-cream-200/60">
+                    <div className="flex items-start gap-3 p-4 sm:p-5">
+                        <div className="w-8 h-8 rounded-lg bg-sage-100 flex items-center justify-center">
+                          <Search size={15} className="text-sage-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="font-semibold text-sage-800 text-sm">Trusted Search Sources</span>
+                          <p className="text-[11px] text-sage-400 mt-0.5">Curated results powered by Exa</p>
+                        </div>
+                    </div>
+                    <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+                      {sourcesLoading ? (
+                        <div className="flex items-center gap-2 text-sage-400 py-4">
+                          <Loader2 size={14} className="animate-spin" />
+                          <span className="text-sm">Finding reliable medicine referencesâ€¦</span>
+                        </div>
+                      ) : (
+                        <div className="grid gap-3">
+                          {(result.sources ?? []).map((source, i) => (
+                            <a
+                              key={`${source.url}-${i}`}
+                              href={source.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block rounded-xl border border-cream-200 bg-white/80 p-3 sm:p-4 transition-all hover:border-sage-300 hover:bg-white"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-sage-800 line-clamp-2">{source.title}</p>
+                                  <p className="text-xs text-sage-400 mt-1">{source.domain}</p>
+                                </div>
+                                <ExternalLink size={13} className="text-sage-400 shrink-0 mt-0.5" />
+                              </div>
+                              {source.snippet && (
+                                <p className="text-sm text-sage-500 leading-relaxed mt-3">{source.snippet}</p>
+                              )}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Drug Interactions */}
-                <div className="glass rounded-2xl p-5 border border-orange-200/40 bg-orange-50/30">
-                  <div className="flex items-center gap-2 mb-3">
-                    <AlertTriangle size={15} className="text-orange-500" />
-                    <span className="font-semibold text-sage-800 text-sm">Drug Interactions</span>
+                {result.interactions.length > 0 && (
+                  <div className="glass rounded-2xl p-5 border border-orange-200/40 bg-orange-50/30">
+                    <div className="flex items-center gap-2 mb-3">
+                      <AlertTriangle size={15} className="text-orange-500" />
+                      <span className="font-semibold text-sage-800 text-sm">Drug Interactions</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {result.interactions.map((drug, i) => (
+                        <span key={i} className="tag bg-orange-100 text-orange-700">{drug}</span>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {result.interactions.map((drug, i) => (
-                      <span key={i} className="tag bg-orange-100 text-orange-700">{drug}</span>
-                    ))}
-                  </div>
-                </div>
+                )}
 
               </div>
             )}
 
             {/* Empty State */}
             {!result && !loading && !notFound && (
-              <div className="glass rounded-2xl p-14 text-center">
-                <div className="blob bg-sage-100 w-24 h-24 mx-auto flex items-center justify-center mb-5">
+              <div className="glass rounded-2xl p-8 sm:p-14 text-center">
+                <div className="blob bg-sage-100 w-20 h-20 sm:w-24 sm:h-24 mx-auto flex items-center justify-center mb-5">
                   <Search size={30} className="text-sage-400" />
                 </div>
                 <h3 className="font-display text-xl font-semibold text-sage-700 mb-2">Search for a medicine</h3>
-                <p className="text-sage-400 text-sm">Type or speak a medicine name to get started.</p>
+                <p className="text-sage-400 text-sm">Type a medicine name to get started.</p>
               </div>
             )}
           </div>
 
           {/* RIGHT COL â€” Prescription + Dosage Guide */}
-          <div className="space-y-5">
+          <div className="space-y-5 lg:sticky lg:top-24 self-start">
 
             {/* Prescription Scanner — Gemini Vision */}
-            <div className="glass rounded-2xl p-5 border border-cream-200/60">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
+            <div className="glass rounded-2xl p-4 sm:p-5 border border-cream-200/60">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-sage-100 flex items-center justify-center">
                     <ScanLine size={15} className="text-sage-500" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h3 className="font-semibold text-sage-800 text-sm">Prescription Scanner</h3>
                     <p className="text-[10px] text-sage-400">Powered by Gemini Vision AI</p>
                   </div>
@@ -586,7 +768,7 @@ export default function DashboardPage() {
 
               {extractedMedicines.length > 0 && (
                 <div className="mt-4 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-xs font-semibold text-sage-600 uppercase tracking-wide flex items-center gap-1.5">
                       <Sparkles size={11} /> Extracted Medicines
                     </p>
@@ -638,7 +820,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Dosage Guide */}
-            <div className="glass rounded-2xl p-5 border border-cream-200/60">
+            <div className="glass rounded-2xl p-4 sm:p-5 border border-cream-200/60">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
                   <Clock size={15} className="text-blue-500" />
@@ -665,11 +847,11 @@ export default function DashboardPage() {
             </div>
 
             {/* Quick Info */}
-            <div className="glass rounded-2xl p-5 border border-cream-200/60">
+            <div className="glass rounded-2xl p-4 sm:p-5 border border-cream-200/60">
               <h3 className="font-semibold text-sage-800 text-sm mb-4">How to use</h3>
               {[
                 { icon: 'fi-sr-search', text: 'Type or paste a medicine name in the search bar' },
-                { icon: 'fi-sr-microphone', text: 'Or click the mic button to search by voice' },
+                { icon: 'fi-sr-globe', text: 'Review trusted Exa-powered sources alongside the AI summary' },
                 { icon: 'fi-sr-camera', text: 'Upload a prescription image for automatic extraction' },
                 { icon: 'fi-sr-pills', text: 'View full drug information, prices, and interactions' },
               ].map((tip, i) => (
