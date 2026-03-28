@@ -1,153 +1,165 @@
-# Shifa AI
+# Shifa AI — Your Medicine, Understood.
 
-**AI-powered medicine understanding for people who should never be left behind by language, handwriting, or medical jargon.**
+**Shifa** (شفا) means *healing* in Urdu.
 
-Shifa means **healing** in Urdu.
+Shifa AI is an AI-powered medicine companion that helps you search, understand, and never miss your medications. It turns confusing prescriptions and medical jargon into clear, actionable information — and keeps you on track with smart reminders.
 
-Shifa AI was built around a real and painful problem:
+---
 
-A farmer in **Shopian** visits a government doctor and receives a prescription in English.  
-He cannot understand what the medicines are, when to take them, or what to avoid.
+## Who Is This For?
 
-That confusion can lead to:
+Shifa AI serves anyone who has ever stood at a pharmacy counter confused about what they were holding. Specifically:
 
-- Wrong dosage
-- Missed timing
-- Dangerous side effects
-- Serious health risks
+**Today, as the app stands, it works best for:**
 
-Shifa AI exists to make medicine **understandable, searchable, and actionable**.
+| User | Why Shifa Helps |
+|------|----------------|
+| **Patients managing chronic conditions** | Diabetes, hypertension, arthritis — multiple meds, complex schedules. Shifa organizes them. |
+| **The elderly** | Forget a dose? Missed yesterday's pill? Reminders on web and Telegram keep seniors on track. |
+| **Caregivers** | Managing medications for an elderly parent or sick family member is hard. Shifa centralizes it. |
+| **Anyone with a confusing prescription** | When a doctor writes in shorthand and you go home unsure — Shifa explains it in plain English. |
+| **People intimidated by medical jargon** | Side effects, drug interactions, pregnancy safety — written for real people, not doctors. |
 
-## 💔 The Problem
+> **Honest note:** The app is currently English-only. Language localization (Urdu, Kashmiri, Hindi) is part of the vision, not yet implemented. The goal of serving rural, low-literacy users fully is aspirational — the foundation is being built.
 
-- Language barriers in rural healthcare are real
-- Prescriptions are often written in English
-- Patients may not understand medicine names or instructions
-- Confusion around dosage and timing can become life-threatening
+---
 
-## ❤️ The Solution
+## What Shifa AI Does (What's Actually Built)
 
-Shifa AI helps a user:
-
-- Upload a prescription image
-- Extract medicine names with AI
-- Search a medicine in English
-- Understand dosage, precautions, and timing in a cleaner, simpler way
-- Compare prices and access trusted reference sources
-- Extend support through Telegram for accessibility beyond the web
-
-Note:
-The current product experience is in **English**, with the larger vision focused on breaking healthcare language barriers for underserved users.
-
-## ⚡ 10-Second Demo
-
-1. Upload prescription image
-2. AI extracts medicine names
-3. Search a medicine instantly
-4. Shows dosage + precautions
-
-## 🏆 Why This Project Stands Out
-
-- Built with the realities of **rural Kashmir** in mind
-- Focused on **language accessibility**, not just generic health-tech
-- Solves a deeply human problem with real-world stakes
-- Designed for users with **low digital literacy**
-- Blends AI, OCR, search, pricing, and messaging into one flow
-
-## ✨ What Shifa AI Does
-
-### 1. Prescription Scanner
-
-Users can upload a prescription image or PDF.  
-Shifa AI extracts medicine names, dosage hints, and instructions from the prescription.
-
-### 2. Medicine Search
-
-Users can type the medicine name in English and instantly get:
-
-- Uses
-- Dosage guidance
+### 1. 🔍 Medicine Search
+Type any medicine name and instantly get:
+- What it's for (uses and indications)
+- Dosage guidance — adult, children, and maximum daily dose
 - Side effects
-- Precautions
+- Precautions and what to avoid
+- Drug interactions
+- Pregnancy safety note
 - Timing guidance
 
-### 3. Trusted Source Enrichment
+**How it works:** Common medicines (Paracetamol, Ibuprofen, Amoxicillin) are served instantly from a curated local database. For any other medicine, Gemini AI generates a careful analysis in real-time and caches it in Convex for future users.
 
-Shifa AI pulls trusted supporting references using Exa so the result is not just AI-generated, but also grounded in real sources.
+---
 
-### 4. Price Comparison
+### 2. 📷 Prescription Scanner (Gemini Vision OCR)
+Upload a photo of your prescription — handwritten or printed.
 
-Shifa AI compares medicine prices from real pharmacy sources to help users make practical decisions.
+Gemini Vision reads it and extracts:
+- Medicine names
+- Dosage instructions
+- Doctor's notes
 
-### 5. Appointments & Reminders
+Each extracted medicine has a one-tap button to pull its full information immediately.
 
-The app includes appointment and reminder flows to support patients beyond the first search.
+**Supported formats:** JPG, PNG, WebP, PDF
 
-### 6. Telegram Accessibility
+---
 
-Telegram integration helps extend reminders and support beyond the browser, making the product more accessible in low-friction environments.
+### 3. 💰 Price Comparison
+After searching a medicine, Shifa fetches live prices from real pharmacy sources so you can compare costs and find the best option.
 
-## 🧩 Tech Stack
+*Powered by Apify — pharmacy data fetched in real-time.*
 
-- **Next.js 14** for the frontend
-- **Convex** for backend logic and data
-- **Gemini API** for AI-powered medicine explanation and prescription understanding
-- **OCR pipeline** for prescription reading
-- **Exa API** for medical knowledge enrichment
-- **Apify** for real-world pharmacy and pricing data
-- **Telegram Bot** for accessibility beyond web
+---
 
-## 🏁 Hackathon Tracks
+### 4. 📚 Trusted Sources
+Every medicine result is enriched with links to trusted medical references — so you're not just reading AI output, you're reading AI-summarized, source-backed information.
 
-- 🧠 **AI**: Gemini API for medical explanations
-- 🔍 **Exa API**: Drug information search
-- 🕸️ **Apify**: Real-world pharmacy & pricing data
-- ⚡ **Convex**: Realtime backend
-- 🤖 **Cursor/Codex**: Rapid fullstack development
+*Powered by Exa neural search.*
 
-## 📸 Screenshots
+---
 
-Add real screenshots inside a `/screenshots` folder and keep these paths:
+### 5. 💊 Medication Reminders
+Set a reminder for each medicine — just the name, time, and frequency. The app tracks:
+- Which doses you've taken today
+- Which are remaining
+- Your full daily schedule in a timeline view
 
-![Landing Page](./screenshots/landing.png)
-![Dashboard](./screenshots/dashboard.png)
-![Prescription Scanner](./screenshots/prescription.png)
-![Results](./screenshots/results.png)
+Reminders persist in the cloud (Convex) — they survive browser restarts and work across sessions.
 
-## 🚀 How To Run
+---
+
+### 6. 📲 Telegram Notifications
+Connect your Telegram account once (2 steps, under a minute). After that, reminders fire as Telegram messages at the exact time you set — so you get notified even when the browser is closed.
+
+**This is the key accessibility unlock.** Telegram works on every phone, uses almost no data, and doesn't require a smart device. It's the bridge toward users who don't live on a web browser.
+
+---
+
+### 7. 🗓️ Appointment Booking (UI Demo)
+Browse a list of doctors, pick a date on the calendar, select a time slot, and confirm a booking. The UI is fully functional as a demonstration — appointment persistence to a real doctor booking system is on the roadmap.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 14 + TypeScript |
+| Styling | Tailwind CSS + custom design system |
+| Animations | GSAP (GreenSock) |
+| Backend / DB | Convex (real-time, serverless) |
+| AI — Medicine analysis | Gemini API (gemini-2.5-flash-lite) |
+| AI — Prescription OCR | Gemini Vision (multimodal) |
+| Medical search enrichment | Exa API |
+| Pharmacy pricing data | Apify |
+| Notifications | Telegram Bot API |
+| Authentication | NextAuth.js + Google OAuth |
+
+---
+
+## Running Locally
 
 ```bash
 npm install
 npm run dev
+```
+
+In a separate terminal:
+```bash
 npx convex dev
 ```
 
-Open `http://localhost:3000`
+Open [http://localhost:3000](http://localhost:3000)
 
-## 🔐 Environment Setup
+---
 
-Create a local `.env.local` with the required keys for:
+## Environment Variables
 
-- Google Auth
-- Convex
-- Gemini
-- Exa
-- Apify
-- Telegram
+Copy `.env.example` to `.env.local` and fill in:
 
-For deployment details, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+```
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+NEXTAUTH_SECRET=
+NEXTAUTH_URL=
 
-## 🌍 Vision
+CONVEX_DEPLOYMENT=
+NEXT_PUBLIC_CONVEX_URL=
 
-Shifa AI aims to become a healthcare companion for the next billion users, breaking language barriers and making medicine understandable for everyone.
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash-lite   # optional, this is the default
 
-## Why It Feels Different
+EXA_API_KEY=
+APIFY_API_KEY=
 
-Most hackathon demos show technology.  
-Shifa AI shows **consequence**.
+TELEGRAM_BOT_TOKEN=
+NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=
+```
 
-This is not just about OCR, search, or APIs. It is about making sure a patient understands what they are putting into their body, when they should take it, and what could go wrong if they do not.
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for full deployment instructions.
 
-That is why this product matters.
+---
 
-Built with the belief that understanding your medicine should never depend on knowing English.
+## The Vision
+
+Medicine is complicated. Labels are dense. Instructions are jargon.
+
+And for too many people — elderly patients, caregivers juggling multiple family members, patients who just got a diagnosis and are overwhelmed — that complexity becomes a real risk.
+
+Shifa AI's goal is to make medicine **understandable, searchable, and hard to forget.**
+
+The English-first version serves that goal for the patients who can use it today. The next step is breaking the language barrier — Urdu, Kashmiri, Hindi — so the people who need this most can access it too.
+
+---
+
+*Built with the belief that understanding your medicine should never be scary.*
